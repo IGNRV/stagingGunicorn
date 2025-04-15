@@ -49,13 +49,7 @@ INSTALLED_APPS = [
     'operadores',
     'tasks',
     'logs',
-    #'inventario',
-    #'catalogo',
-    #'proveedores',
-    #'solicitudes',
-    #'servicios',
-    #'compras',
-    # etc...
+    
 ]
 
 MIDDLEWARE = [
