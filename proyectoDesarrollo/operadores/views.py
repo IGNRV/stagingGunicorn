@@ -1,5 +1,18 @@
 # ./operadores/views.py
-from rest_framework import viewsets, status
+from __future__ import annotations
+
+import os
+import jwt
+import secrets
+import requests
+import crypt                              # misma sal BlowFish heredada
+from datetime import datetime, timedelta
+
+from django.conf import settings
+from django.core.exceptions import PermissionDenied
+from django.db import connection
+from django.utils import timezone
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -9,48 +22,55 @@ from .models import (
     Sesion, SesionActiva
 )
 from .serializer import (
-    OperadorSerializer, OperadorBodegaSerializer, OperadorEmpresaModuloSerializer,
-    OperadorEmpresaModuloMenuSerializer, OperadorGrupoSerializer, OperadorPuntoVentaSerializer,
+    OperadorSerializer, OperadorBodegaSerializer,
+    OperadorEmpresaModuloSerializer, OperadorEmpresaModuloMenuSerializer,
+    OperadorGrupoSerializer, OperadorPuntoVentaSerializer,
     SesionSerializer, SesionActivaSerializer
 )
 
-import jwt
-from django.conf import settings
-from datetime import datetime, timedelta
-from django.utils import timezone
-import secrets
-import requests
-import crypt                         # misma sal BlowFish heredada
-
-from django.db import connection
-from django.core.exceptions import PermissionDenied
-from django.http import HttpResponseForbidden
-
 
 # ---------------------------------------------------------------------
-#  CORS mínimo (solo bloquear si ORIGIN ≠ permitido)
+#  CORS mínimo ─ permite varios orígenes (prod + dev) -----------------
 # ---------------------------------------------------------------------
 class RestrictToReactMixin:
     """
-    ‑ Si la petición viene con cabecera **Origin**, comprobamos que sea la
-      permitida; si la cabecera no existe (p.e. Postman/cURL o misma
-      página), dejamos pasar.
+    Permite la petición solo si la cabecera **Origin** está incluida en
+    la lista blanca.  
+    · Si el navegador NO envía cabecera Origin (p.e. cURL / Postman)
+      la solicitud se acepta.  
+    · La lista se puede ampliar vía variable de entorno
+      «ALLOWED_CORS_ORIGINS», separada por comas.
     """
-    ALLOWED_ORIGIN = "http://localhost:5173"        # cambia en producción
+    _BASE_ORIGINS = {
+        "http://localhost:5173",          # desarrollo local
+        "https://desarrollo.smartgest.cl" # build de desarrollo
+    }
+
+    # leemos orígenes extra definidos en variables de entorno
+    EXTRA_ORIGINS = set(
+        origin.strip()
+        for origin in os.getenv("ALLOWED_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    )
+
+    ALLOWED_ORIGINS = _BASE_ORIGINS | EXTRA_ORIGINS
 
     def initial(self, request, *args, **kwargs):
         origin = request.META.get("HTTP_ORIGIN")
-        if origin is not None and origin != self.ALLOWED_ORIGIN:
-            # usamos una excepción DRF estándar → evita errores 500
+
+        # «None» → llamada sin cabecera Origin (Postman, misma página, etc.)
+        if origin is not None and origin not in self.ALLOWED_ORIGINS:
             raise PermissionDenied("Acceso denegado por CORS.")
+
         return super().initial(request, *args, **kwargs)
 
 
 # ---------------------------------------------------------------------
 #  utilidades auxiliares
 # ---------------------------------------------------------------------
-def enviar_correo_python(remitente: str, correo_destino: str,
-                         asunto: str, detalle: str) -> None:
+def enviar_correo_python(
+    remitente: str, correo_destino: str, asunto: str, detalle: str
+) -> None:
     """Consume el micro‑servicio PHP legado que envía correos."""
     try:
         requests.post(
@@ -74,10 +94,9 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
     queryset = Operador.objects.all()
     serializer_class = OperadorSerializer
 
-    # ==============================================================
-    # 1) LOGIN  -----------------------------------------------------
-    # ==============================================================
-
+    # ============================================================== #
+    # 1) LOGIN ------------------------------------------------------ #
+    # ============================================================== #
     @action(detail=False, methods=["post"])
     def validar(self, request):
         """
@@ -92,18 +111,7 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # -- comprobamos si existe y cuántos fallos lleva
-        try:
-            op_tmp = Operador.objects.get(username=username)
-            if op_tmp.conexion_fallida > 3:
-                return Response(
-                    {"error": "Cuenta bloqueada por demasiados intentos fallidos."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-        except Operador.DoesNotExist:
-            pass
-
-        # -- usuario real
+        # ───────── validación de credenciales ─────────
         try:
             op = Operador.objects.get(username=username)
         except Operador.DoesNotExist:
@@ -112,7 +120,6 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # -- estados
         if op.estado != 1:
             return Response(
                 {"error": "El usuario no se encuentra activo."},
@@ -129,7 +136,7 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # -- contraseña (hash BlowFish heredado)
+        # contraseña (hash BlowFish heredado)
         if crypt.crypt(password, op.password) != op.password:
             op.conexion_fallida += 1
             op.save(update_fields=["conexion_fallida"])
@@ -138,12 +145,12 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # -- reset fallos
+        # reset de fallos
         if op.conexion_fallida:
             op.conexion_fallida = 0
             op.save(update_fields=["conexion_fallida"])
 
-        # -- JWT por 24 h
+        # JWT por 24 h
         token = jwt.encode(
             {
                 "id":       op.id,
@@ -154,13 +161,13 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
             algorithm="HS256",
         )
 
-        # -- IP real
+        # IP real
         ip = request.META.get("HTTP_X_FORWARDED_FOR",
                               request.META.get("REMOTE_ADDR", ""))
         if "," in ip:
             ip = ip.split(",")[0].strip()
 
-        # -- sesión + 2FA
+        # sesión + 2FA
         sesion = Sesion.objects.create(
             ip=ip,
             fecha=timezone.now(),
@@ -184,10 +191,9 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
 
         return Response({"username": op.username}, status=status.HTTP_200_OK)
 
-    # ==============================================================
-    # 2) 2FA / VERIFICAR  ------------------------------------------
-    # ==============================================================
-
+    # ============================================================== #
+    # 2) 2FA / VERIFICAR ------------------------------------------- #
+    # ============================================================== #
     @action(detail=False, methods=["post"])
     def verificar(self, request):
         """
@@ -312,10 +318,9 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
         )
         return resp
 
-    # ==============================================================
-    # 3) LOGOUT  ----------------------------------------------------
-    # ==============================================================
-
+    # ============================================================== #
+    # 3) LOGOUT ----------------------------------------------------- #
+    # ============================================================== #
     @action(detail=False, methods=["get"])
     def logout(self, request):
         token = request.COOKIES.get("token")
@@ -380,7 +385,7 @@ class SesionActivaViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
 
 
 # ---------------------------------------------------------------------
-#  SESIÓN POR TOKEN  ---------------------------------------------------
+#  SESIÓN POR TOKEN ----------------------------------------------------
 # ---------------------------------------------------------------------
 class OperadorByTokenViewSet(RestrictToReactMixin, viewsets.ViewSet):
     """
