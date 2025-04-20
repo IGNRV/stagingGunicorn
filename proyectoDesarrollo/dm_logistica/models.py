@@ -1,0 +1,1348 @@
+# ./dm_logistica/models.py
+# -----------------------------------------------------------------------------
+#  IMPORTS
+# -----------------------------------------------------------------------------
+from django.db import models
+from django.utils import timezone
+
+# -----------------------------------------------------------------------------
+# 1) ESTADOS, TIPOS Y ENTIDADES BASE
+# -----------------------------------------------------------------------------
+class EstadoProducto(models.Model):
+    """
+    Equivale a dm_logistica.estado_producto
+    """
+    id = models.AutoField(primary_key=True, db_column="id_estado_producto")
+    estado_producto = models.CharField(max_length=50)
+
+    class Meta:
+        db_table = '"dm_logistica"."estado_producto"'
+        verbose_name = "Estado de Producto"
+        verbose_name_plural = "Estados de Producto"
+
+    def __str__(self):
+        return self.estado_producto
+
+
+class EstadoControlInventario(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_estado_control_inventario")
+    detalle = models.CharField(max_length=50, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."estado_control_inventario"'
+        verbose_name = "Estado Control de Inventario"
+        verbose_name_plural = "Estados Control de Inventario"
+
+
+class EstadoDetalleControlInventario(models.Model):
+    id = models.AutoField(
+        primary_key=True, db_column="id_estado_detalle_control_inventario"
+    )
+    descripcion = models.CharField(max_length=45, null=True, blank=True)
+    boton = models.SmallIntegerField(null=True, blank=True)
+    dboton = models.CharField(max_length=15, null=True, blank=True)
+    icon = models.CharField(max_length=20, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."estado_detalle_control_inventario"'
+        verbose_name = "Estado Detalle de Control de Inventario"
+        verbose_name_plural = "Estados Detalle de Control de Inventario"
+
+
+class TipoControlInventario(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_tipo_control_inventario")
+    detalle = models.CharField(max_length=50, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."tipo_control_inventario"'
+        verbose_name = "Tipo de Control de Inventario"
+        verbose_name_plural = "Tipos de Control de Inventario"
+
+
+# -----------------------------------------------------------------------------
+# 2) BODEGAS
+# -----------------------------------------------------------------------------
+class BodegaTipo(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_bodega_tipo")
+    tipo_bodega = models.CharField(max_length=50, unique=True, default="")
+
+    class Meta:
+        db_table = '"dm_logistica"."bodega_tipo"'
+        verbose_name = "Tipo de Bodega"
+
+
+class Bodega(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_bodega")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        default=0,
+    )
+    estado_bodega = models.PositiveIntegerField(default=0)
+    nombre_bodega = models.CharField(max_length=100)
+    id_bodega_tipo = models.ForeignKey(
+        "BodegaTipo",
+        on_delete=models.RESTRICT,
+        db_column="id_bodega_tipo",
+        related_name="bodega",
+    )
+
+    class Meta:
+        db_table = '"dm_logistica"."bodega"'
+        verbose_name = "Bodega"
+        verbose_name_plural = "Bodegas"
+        indexes = [
+            models.Index(fields=["estado_bodega"], name="fk_bodg_ebg"),
+            models.Index(fields=["id_bodega_tipo"], name="idx_bodg_tbdg"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_bodg"),
+        ]
+
+    def __str__(self):
+        return f"Bodega {self.id} - {self.nombre_bodega}"
+
+
+class BodegaStock(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_bodega_stock")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        default=0,
+    )
+    id_bodega = models.ForeignKey(
+        Bodega,
+        on_delete=models.RESTRICT,
+        db_column="id_bodega",
+        related_name="bodega_stock",
+    )
+    id_modelo_producto = models.IntegerField()
+    stock_critico = models.IntegerField(null=True, blank=True)
+    porc_alarma = models.IntegerField(null=True, blank=True)
+    alarma = models.SmallIntegerField(null=True, blank=True)
+    id_grupo = models.ForeignKey(
+        "coreempresas.Grupo",
+        on_delete=models.RESTRICT,
+        db_column="id_grupo",
+        related_name="bodega_stock",
+    )
+
+    class Meta:
+        db_table = '"dm_logistica"."bodega_stock"'
+        verbose_name = "Stock en Bodega"
+        verbose_name_plural = "Stocks en Bodega"
+        indexes = [
+            models.Index(fields=["id_bodega"], name="fk_bodg_stbdga"),
+            models.Index(fields=["id_modelo_producto"], name="fk_bodg_st_modprod"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_bodg_stk"),
+            models.Index(fields=["id_grupo"], name="fk_id_grbdega_stock"),
+        ]
+        # ------------------------------------------------------------------
+        #  ⚠️  RESTRICCIÓN CORREGIDA:
+        #  Antes incluía 'id_bodega_stock', que no existe como campo de modelo.
+        # ------------------------------------------------------------------
+        constraints = [
+            models.UniqueConstraint(
+                fields=["id_modelo_producto", "id_bodega"],
+                name="bodega_stock_unique_compound",
+            )
+        ]
+
+
+# -----------------------------------------------------------------------------
+# 3) CONTROL DE INVENTARIO
+# -----------------------------------------------------------------------------
+class ControlInventario(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_control_inventario")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    fecha = models.DateTimeField(null=True, blank=True)
+    id_operador = models.ForeignKey(
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        related_name="control_inventario",
+        null=True,
+    )
+    id_bodega = models.ForeignKey(
+        Bodega,
+        on_delete=models.RESTRICT,
+        db_column="id_bodega",
+        related_name="control_inventario",
+    )
+    id_estado_control_inventario = models.ForeignKey(
+        "EstadoControlInventario",
+        on_delete=models.RESTRICT,
+        db_column="id_estado_control_inventario",
+        related_name="control_inventario",
+        null=True,
+    )
+    id_tipo_control_inventario = models.ForeignKey(
+        "TipoControlInventario",
+        on_delete=models.RESTRICT,
+        db_column="id_tipo_control",
+        related_name="control_inventario",
+        null=True,
+    )
+    fecha_termino = models.DateTimeField(null=True, blank=True)
+    observaciones = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."control_inventario"'
+        verbose_name = "Control de Inventario"
+        verbose_name_plural = "Controles de Inventario"
+        indexes = [
+            models.Index(fields=["id_estado_control_inventario"], name="fk_id_estcinv"),
+            models.Index(fields=["id_tipo_control_inventario"], name="fk_id_tipo_cont_inv"),
+            models.Index(fields=["id_bodega"], name="fk_id_bodega"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_cont_invt"),
+            models.Index(fields=["id_operador"], name="fk_id_op_cont_invt"),
+        ]
+
+
+class DetalleControlInventario(models.Model):
+    id = models.AutoField(
+        primary_key=True, db_column="id_detalle_control_inventario"
+    )
+    id_control_inventario = models.ForeignKey(
+        ControlInventario,
+        on_delete=models.RESTRICT,
+        db_column="id_control_inventario",
+        related_name="detalles_inventario",
+        null=True,
+    )
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_producto_bodega = models.ForeignKey(
+        "ProductoBodega",
+        on_delete=models.RESTRICT,
+        db_column="id_producto_bodega",
+        related_name="detalles_inventario",
+        null=True,
+    )
+    id_estado_detalle_control_inventario = models.ForeignKey(
+        "EstadoDetalleControlInventario",
+        on_delete=models.RESTRICT,
+        db_column="id_estado_detalle_control_inventario",
+        related_name="detalles_inventario",
+        null=True,
+    )
+    serial = models.CharField(max_length=100, null=True, blank=True)
+    id_modelo_producto = models.IntegerField(null=True, blank=True)
+    estado_producto = models.CharField(max_length=50, null=True, blank=True)
+    cantidad_original = models.FloatField(null=True, blank=True)
+    cantidad_actual = models.FloatField(null=True, blank=True)
+    nombre_modelo = models.CharField(max_length=100, null=True, blank=True)
+    producto_seriado = models.SmallIntegerField(null=True, blank=True)
+    nombre_unidad_medida = models.CharField(max_length=30, null=True, blank=True)
+    nombre_serie = models.CharField(max_length=45, null=True, blank=True)
+    fecha = models.DateTimeField(null=True, blank=True)
+    fecha_verificacion = models.DateTimeField(null=True, blank=True)
+    id_operador = models.ForeignKey(
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        related_name="detalles_inventario",
+        null=True,
+        blank=True,
+    )
+    id_operador_verificador = models.CharField(max_length=50, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."detalle_control_inventario"'
+        verbose_name = "Detalle de Control de Inventario"
+        verbose_name_plural = "Detalles de Control de Inventario"
+        indexes = [
+            models.Index(fields=["id_control_inventario"], name="fk_cot_invent_dci"),
+            models.Index(fields=["id_producto_bodega"], name="fk_id_prod_bdg_dci"),
+            models.Index(
+                fields=["id_estado_detalle_control_inventario"], name="fk_id_est_det_cont_dci"
+            ),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_cont_invent_dci"),
+            models.Index(fields=["id_operador"], name="fk_id_op_cont_invent_dci"),
+            models.Index(fields=["id_modelo_producto"], name="fk_id_mod_prod_dci"),
+        ]
+
+
+# -----------------------------------------------------------------------------
+# 4) MOVIMIENTOS
+# -----------------------------------------------------------------------------
+class Movimiento(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_movimiento")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    folio = models.CharField(max_length=9, null=True, blank=True)
+    operador_emision = models.CharField(max_length=50, null=True, blank=True)
+    operador_destino = models.CharField(max_length=50, default="", blank=True)
+    observacion = models.TextField(null=True, blank=True)
+    id_bodega = models.ForeignKey(
+        Bodega, on_delete=models.RESTRICT, db_column="id_bodega", related_name="movimientos"
+    )
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    tipo_movimiento = models.CharField(max_length=50, default="MOVIMIENTO")
+    id_bodega_origen = models.IntegerField()
+    id_despachador = models.IntegerField(default=0)
+    id_receptor = models.IntegerField(default=0)
+    id_punto_venta = models.IntegerField(default=0)
+    pdf = models.CharField(max_length=255, null=True, blank=True)
+    folio_comprobante = models.CharField(max_length=32, default="0")
+    fecha_actualizacion = models.DateTimeField(null=True, blank=True)
+    id_requerimiento = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."movimiento"'
+        verbose_name = "Movimiento"
+        verbose_name_plural = "Movimientos"
+        indexes = [
+            models.Index(fields=["id_bodega"], name="fk_movi_bdga"),
+            models.Index(fields=["tipo_movimiento"], name="idx_movi_tp_mov"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_movi"),
+            models.Index(fields=["id_receptor"], name="id_receptor"),
+            models.Index(fields=["fecha_registro"], name="fecha_registro"),
+        ]
+
+
+class MovimientoBodega(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_movimiento_bodega")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_movimiento = models.ForeignKey(
+        Movimiento,
+        on_delete=models.RESTRICT,
+        db_column="id_movimiento",
+        related_name="movimientos_bodega",
+    )
+    id_producto_bodega = models.ForeignKey(
+        "ProductoBodega",
+        on_delete=models.RESTRICT,
+        db_column="id_producto_bodega",
+        related_name="movimientos_bodega",
+        null=True,
+        blank=True,
+    )
+    id_ejecutivo_terreno = models.IntegerField(default=0)
+    estado = models.CharField(max_length=15, null=True, blank=True)
+    id_ejecutivo_recibe = models.IntegerField(default=0)
+    obs = models.CharField(max_length=255, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."movimiento_bodega"'
+        verbose_name = "Movimiento Bodega"
+        verbose_name_plural = "Movimientos Bodega"
+        indexes = [
+            models.Index(fields=["id_movimiento"], name="fk_movi_bodga_movi"),
+            models.Index(fields=["id_producto_bodega"], name="fk_movi_bdg_prod_bodga"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_mov_bodega"),
+        ]
+
+
+# -----------------------------------------------------------------------------
+# 5) PRODUCTOS, TIPOS Y ATRIBUTOS
+# -----------------------------------------------------------------------------
+
+
+class UnidadMedida(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_unidad_medida")
+    nombre_unidad_medida = models.CharField(max_length=30, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."unidad_medida"'
+        verbose_name = "Unidad de Medida"
+        verbose_name_plural = "Unidades de Medida"
+
+    def __str__(self):
+        return self.nombre_unidad_medida or f"Unidad {self.id}"
+
+
+class IdentificadorSerie(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_identificador_serie")
+    nombre_serie = models.CharField(max_length=45)
+    estado_serie = models.IntegerField(default=1)
+
+    class Meta:
+        db_table = '"dm_logistica"."identificador_serie"'
+        verbose_name = "Identificador de Serie"
+        verbose_name_plural = "Identificadores de Serie"
+
+    def __str__(self):
+        return self.nombre_serie
+
+
+class TipoProducto(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_tipo_producto")
+    codigo_tipo_producto = models.CharField(max_length=255, null=True, blank=True)
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    tipo_producto = models.CharField(max_length=100)
+    estado = models.SmallIntegerField(default=1)
+
+    class Meta:
+        db_table = '"dm_logistica"."tipo_producto"'
+        verbose_name = "Tipo de Producto"
+        verbose_name_plural = "Tipos de Producto"
+        indexes = [
+            models.Index(fields=["tipo_producto"], name="idx_tipo_producto"),
+            models.Index(fields=["id_empresa"], name="fk_id_empresa_tipo_producto"),
+        ]
+
+    def __str__(self):
+        return self.tipo_producto
+
+
+class MarcaProducto(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_marca_producto")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    marca_producto = models.CharField(max_length=50)
+    estado = models.IntegerField(default=1)
+
+    class Meta:
+        db_table = '"dm_logistica"."marca_producto"'
+        verbose_name = "Marca de Producto"
+        verbose_name_plural = "Marcas de Producto"
+        indexes = [
+            models.Index(fields=["id_empresa"], name="fk_id_empresa_marca_producto"),
+        ]
+
+    def __str__(self):
+        return self.marca_producto
+
+
+class TipoMarcaProducto(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_tipo_marca_producto")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_tipo_producto = models.ForeignKey(
+        TipoProducto,
+        on_delete=models.RESTRICT,
+        db_column="id_tipo_producto",
+        related_name="tipos_marca_productos",
+    )
+    id_marca_producto = models.ForeignKey(
+        MarcaProducto,
+        on_delete=models.RESTRICT,
+        db_column="id_marca_producto",
+        related_name="tipos_marca_productos",
+    )
+
+    class Meta:
+        db_table = '"dm_logistica"."tipo_marca_producto"'
+        verbose_name = "Tipo Marca Producto"
+        verbose_name_plural = "Tipos Marca Producto"
+        unique_together = (("id", "id_marca_producto"),)
+        indexes = [
+            models.Index(fields=["id_marca_producto"], name="fk_tmp_marc"),
+            models.Index(fields=["id_empresa"], name="fk_tmp_emp"),
+        ]
+
+    def __str__(self):
+        return f"{self.id_tipo_producto} - {self.id_marca_producto}"
+
+
+class ModeloProducto(models.Model):
+    id_modelo_producto = models.IntegerField(default=0, unique=True)
+    codigo_interno = models.CharField(max_length=50, null=True, blank=True)
+    fccid = models.CharField(max_length=50, null=True, blank=True)
+    sku = models.CharField(max_length=255, null=True, blank=True)
+    sku_codigo = models.CharField(max_length=255, null=True, blank=True)
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_tipo_marca_producto = models.ForeignKey(
+        TipoMarcaProducto,
+        on_delete=models.RESTRICT,
+        db_column="id_tipo_marca_producto",
+        related_name="modelos",
+    )
+    id_identificador_serie = models.ForeignKey(
+        IdentificadorSerie,
+        on_delete=models.RESTRICT,
+        db_column="id_identificador_serie",
+        related_name="modelos",
+    )
+    id_unidad_medida = models.ForeignKey(
+        UnidadMedida,
+        on_delete=models.RESTRICT,
+        db_column="id_unidad_medida",
+        related_name="modelos",
+    )
+    nombre_modelo = models.CharField(max_length=100)
+    descripcion = models.TextField(null=True, blank=True)
+    imagen = models.CharField(max_length=200, null=True, blank=True)
+    estado = models.IntegerField(default=1)
+    numero_parte = models.CharField(max_length=100)
+    producto_seriado = models.SmallIntegerField(default=1)
+    nombre_comercial = models.CharField(max_length=255, null=True, blank=True)
+    nombre_tecnico = models.CharField(max_length=255, null=True, blank=True)
+    so = models.CharField(max_length=100, null=True, blank=True)
+    vso = models.CharField(max_length=100, null=True, blank=True)
+    version_hw = models.CharField(max_length=100, null=True, blank=True)
+    vspc = models.CharField(max_length=100, null=True, blank=True)
+    vspf = models.CharField(max_length=100, null=True, blank=True)
+    fabricante = models.CharField(max_length=255, null=True, blank=True)
+    ubicacion = models.CharField(max_length=255, null=True, blank=True)
+    despacho_express = models.SmallIntegerField(default=0)
+    rebaja_consumo = models.IntegerField(default=0)
+    dias_rebaja_consumo = models.IntegerField(null=True, blank=True)
+    orden_solicitud_despacho = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."modelo_producto"'
+        verbose_name = "Modelo de Producto"
+        verbose_name_plural = "Modelos de Producto"
+        indexes = [
+            models.Index(fields=["id_identificador_serie"], name="fk_modprod_idser"),
+            models.Index(fields=["id_tipo_marca_producto"], name="fk_modprod_tpmar"),
+            models.Index(fields=["numero_parte"], name="idx_numero_parte"),
+            models.Index(fields=["id_unidad_medida"], name="fk_modprod_unimed"),
+            models.Index(fields=["nombre_modelo"], name="idx_nombre_modelo"),
+            models.Index(fields=["id_empresa"], name="fk_id_empresa_modelo_producto"),
+            models.Index(fields=["sku"], name="sku_idx"),
+            models.Index(fields=["sku_codigo"], name="sku_codigo_idx"),
+        ]
+
+    def __str__(self):
+        return self.nombre_modelo
+
+
+class ModeloProductoValores(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_modelo_producto_valor")
+    id_modelo_producto = models.IntegerField(default=0)
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    valor_cliente = models.IntegerField(null=True, blank=True)
+    valor_publico = models.IntegerField(null=True, blank=True)
+    margen = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."modelo_producto_valores"'
+        verbose_name = "Valor de Modelo de Producto"
+        verbose_name_plural = "Valores de Modelos de Producto"
+        indexes = [
+            models.Index(fields=["id_modelo_producto"], name="idx_id_modelo_producto"),
+            models.Index(fields=["id_empresa"], name="idx_id_empresa"),
+        ]
+
+    def __str__(self):
+        return f"Valor para modelo {self.id_modelo_producto}"
+
+
+# -------------------------------------------------------------------------
+#  NUEVO: ProductoBodega
+# -------------------------------------------------------------------------
+class ProductoBodega(models.Model):
+    """
+    Registro individual (o por lote) de un modelo de producto almacenado
+    en una bodega determinada.
+    Sirve de nexo para movimientos, controles de inventario y atributos.
+    """
+    id = models.AutoField(primary_key=True, db_column="id_producto_bodega")
+
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+        related_name="productos_bodega",
+    )
+    id_bodega = models.ForeignKey(
+        Bodega,
+        on_delete=models.RESTRICT,
+        db_column="id_bodega",
+        related_name="productos_bodega",
+    )
+    id_modelo_producto = models.ForeignKey(
+        ModeloProducto,
+        on_delete=models.RESTRICT,
+        db_column="id_modelo_producto",
+        related_name="productos_bodega",
+    )
+    serial = models.CharField(max_length=100, null=True, blank=True)
+    cantidad = models.FloatField(null=True, blank=True)
+    id_estado_producto = models.ForeignKey(
+        EstadoProducto,
+        on_delete=models.RESTRICT,
+        db_column="id_estado_producto",
+        related_name="productos_bodega",
+        null=True,
+        blank=True,
+    )
+    fecha_registro = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = '"dm_logistica"."producto_bodega"'
+        verbose_name = "Producto en Bodega"
+        verbose_name_plural = "Productos en Bodega"
+        indexes = [
+            models.Index(fields=["id_bodega"], name="fk_prod_bod_bod"),
+            models.Index(fields=["id_modelo_producto"], name="fk_prod_bod_modprod"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_prod_bod"),
+            models.Index(fields=["id_estado_producto"], name="fk_id_est_prod_bod"),
+        ]
+
+    def __str__(self):
+        return f"ProductoBodega {self.id}"
+
+
+class Atributo(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_atributo")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_modelo_producto = models.IntegerField(default=0)
+    nombre_atributo = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = '"dm_logistica"."atributo"'
+        verbose_name = "Atributo"
+        verbose_name_plural = "Atributos"
+        indexes = [
+            models.Index(fields=["id_modelo_producto"], name="fk_atributo_modelo_producto"),
+            models.Index(fields=["id_empresa"], name="fk_id_empresa_atributo"),
+        ]
+
+    def __str__(self):
+        return self.nombre_atributo
+
+
+class AtributoDetalle(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_atributo_detalle")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_producto_bodega = models.ForeignKey(
+        "ProductoBodega",
+        on_delete=models.RESTRICT,
+        db_column="id_producto_bodega",
+        related_name="atributos_detalles",
+    )
+    id_atributo = models.ForeignKey(
+        Atributo,
+        on_delete=models.RESTRICT,
+        db_column="id_atributo",
+        related_name="atributos_detalles",
+    )
+    valor = models.CharField(max_length=255, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."atributo_detalle"'
+        verbose_name = "Detalle de Atributo"
+        verbose_name_plural = "Detalles de Atributo"
+        indexes = [
+            models.Index(fields=["id_atributo"], name="fk_at_d_at"),
+            models.Index(fields=["valor"], name="idx_valor"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_at_det"),
+            models.Index(fields=["id_producto_bodega"], name="fk_id_p_bod_atd"),
+        ]
+
+    def __str__(self):
+        return f"{self.id_atributo} = {self.valor}"
+
+# -----------------------------------------------------------------------------
+# 6) COMPRAS
+# -----------------------------------------------------------------------------
+class Cotizacion(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_cotizacion")
+    id_proveedor = models.ForeignKey(
+        "Proveedor",
+        on_delete=models.RESTRICT,
+        db_column="id_proveedor",
+    )
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_solicitud_compra = models.ForeignKey(
+        "SolicitudCompra",
+        on_delete=models.RESTRICT,
+        db_column="id_solicitud_compra",
+        null=True,
+        blank=True,
+    )
+    fecha_cotizacion = models.DateTimeField(default=timezone.now)
+    total = models.FloatField(null=True, blank=True)
+    validez_cotizacion = models.IntegerField(null=True, blank=True)
+    archivo = models.CharField(max_length=256, null=True, blank=True)
+    estado_cotizacion = models.IntegerField(default=0)
+    estado_detalle = models.SmallIntegerField(default=0)
+    iva = models.SmallIntegerField(null=True, blank=True)
+    folio = models.CharField(max_length=64, null=True, blank=True)
+    id_operador = models.ForeignKey(
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        null=True,
+        blank=True,
+    )
+    id_tipo_moneda = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."cotizacion"'
+        indexes = [
+            models.Index(fields=["id_proveedor"], name="fk_cot_proveedor1_idx"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_cot"),
+            models.Index(fields=["id_solicitud_compra"], name="fk_id_sc_cot"),
+            models.Index(fields=["id_operador"], name="fk_id_op_cot"),
+        ]
+
+    def __str__(self):
+        return f"Cotizacion {self.id}"
+
+
+class DetalleCotizacion(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_detalle_cotizacion")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+    )
+    id_cotizacion = models.ForeignKey(
+        Cotizacion,
+        on_delete=models.RESTRICT,
+        db_column="id_cotizacion",
+        related_name="detalle_cotizacion",
+    )
+    id_proveedor = models.ForeignKey(
+        "Proveedor",
+        on_delete=models.RESTRICT,
+        db_column="id_proveedor",
+        related_name="detalle_cotizacion",
+    )
+    fecha_registro = models.DateTimeField(default=timezone.now)
+    cantidad = models.CharField(max_length=50, null=True, blank=True)
+    detalles = models.CharField(max_length=255, null=True, blank=True)
+    descuento_unitario = models.FloatField(null=True, blank=True)
+    precio_unitario = models.FloatField(null=True, blank=True)
+    id_modelo_producto = models.IntegerField(null=True, blank=True)
+    tipo_descuento = models.CharField(max_length=5, null=True, blank=True)
+    tipo_item = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."detalle_cotizacion"'
+        indexes = [
+            models.Index(fields=["id_modelo_producto"], name="mod_prod_det_cot"),
+            models.Index(fields=["id_cotizacion"], name="fk_cot_det_cot"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_det_cot"),
+            models.Index(fields=["id_proveedor"], name="fk_id_proveedor_det_cot"),
+        ]
+
+    def __str__(self):
+        return f"DetalleCotizacion {self.id}"
+
+
+class EstadoOrdenCompra(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_estado_orden_compra")
+    descripcion = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = '"dm_logistica"."estado_orden_compra"'
+        verbose_name = "Estado Orden Compra"
+        verbose_name_plural = "Estados Orden Compra"
+
+    def __str__(self):
+        return self.descripcion
+
+
+class OrdenCompra(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_orden_compra")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+    )
+    id_cotizacion = models.ForeignKey(
+        Cotizacion,
+        on_delete=models.RESTRICT,
+        db_column="id_cotizacion",
+        related_name="orden_compra",
+    )
+    id_solicitante = models.CharField(max_length=50, null=True, blank=True)
+    id_operador = models.ForeignKey(
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        related_name="orden_compra",
+        null=True,
+        blank=True,
+    )
+    id_estado_orden_compra = models.ForeignKey(
+        EstadoOrdenCompra,
+        on_delete=models.RESTRICT,
+        db_column="id_estado_or_compra",
+        related_name="orden_compra",
+    )
+    id_solicitud_compra = models.ForeignKey(
+        "SolicitudCompra",
+        on_delete=models.RESTRICT,
+        db_column="id_solicitud_compra",
+        related_name="orden_compra",
+    )
+    id_proveedor = models.ForeignKey(
+        "Proveedor",
+        on_delete=models.RESTRICT,
+        db_column="id_proveedor",
+        related_name="orden_compra",
+        null=True,
+        blank=True,
+    )
+    folio = models.CharField(max_length=30, null=True, blank=True)
+    fecha = models.DateTimeField(default=timezone.now)
+    neto = models.FloatField(null=True, blank=True)
+    iva = models.FloatField(null=True, blank=True)
+    monto_total = models.FloatField(null=True, blank=True)
+    observacion = models.TextField(null=True, blank=True)
+    fecha_entrega = models.DateTimeField(null=True, blank=True)
+    id_aprobador = models.CharField(max_length=50, null=True, blank=True)
+    archivo = models.CharField(max_length=256, null=True, blank=True)
+    notas_adicionales = models.TextField(null=True, blank=True)
+    id_requerimiento = models.IntegerField(null=True, blank=True)
+    id_tipo_moneda = models.IntegerField(null=True, blank=True)
+    operador_anula = models.CharField(max_length=50, null=True, blank=True)
+    fecha_anula = models.DateTimeField(null=True, blank=True)
+    motivo_anula = models.TextField(null=True, blank=True)
+    desviacion = models.CharField(max_length=2, default="NO")
+
+    class Meta:
+        db_table = '"dm_logistica"."orden_compra"'
+        indexes = [
+            models.Index(fields=["id_operador"], name="fk_orden_comp_op"),
+            models.Index(fields=["id_solicitud_compra"], name="fk_orden_compra_sol_com"),
+            models.Index(fields=["id_cotizacion"], name="fk_orden_comp_cot"),
+            models.Index(fields=["id_estado_orden_compra"], name="fk_orden_comp_est_or_comp"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_ord_comp"),
+            models.Index(fields=["id_proveedor"], name="fk_id_prov_ord_comp"),
+            models.Index(fields=["id_solicitante"], name="id_solicitante"),
+            models.Index(fields=["folio"], name="folio"),
+        ]
+
+    def __str__(self):
+        return f"OrdenCompra {self.id}"
+
+
+class DetalleCompra(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_detalle_compra")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+    )
+    id_orden_compra = models.ForeignKey(
+        OrdenCompra,
+        on_delete=models.RESTRICT,
+        db_column="id_orden_compra",
+        related_name="detalles_compra",
+    )
+    id_modelo_producto = models.IntegerField(null=True, blank=True)
+    cantidad = models.BigIntegerField(null=True, blank=True)
+    precio_unitario = models.FloatField(null=True, blank=True)
+    glosa = models.CharField(max_length=100, null=True, blank=True)
+    descuento_unitario = models.FloatField(null=True, blank=True)
+    total_neto = models.FloatField(null=True, blank=True)
+    tipo_item = models.IntegerField(null=True, blank=True)
+    comprobado = models.IntegerField(default=0)
+    producto_ingresado = models.SmallIntegerField(default=0)
+    fecha_ingreso_producto = models.DateTimeField(null=True, blank=True)
+    id_operador_ingreso_producto = models.CharField(max_length=50, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."detalle_compra"'
+        indexes = [
+            models.Index(fields=["id_orden_compra"], name="fk_det_comp_orc"),
+            models.Index(fields=["id_modelo_producto"], name="det_comp_modp"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_det_comp"),
+        ]
+
+    def __str__(self):
+        return f"DetalleCompra {self.id}"
+
+
+class ProcesoComparacion(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_proceso_comparacion")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+    )
+    id_orden_compra = models.ForeignKey(
+        OrdenCompra,
+        on_delete=models.RESTRICT,
+        related_name="proceso_comparacion",
+        db_column="id_orden_compra",
+    )
+    id_operador = models.ForeignKey(
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        related_name="proceso_comparacion",
+        null=True,
+        blank=True,
+    )
+    fecha_comparacion = models.DateTimeField(auto_now=True)
+    estado_comparacion = models.IntegerField(default=1)
+    observacion = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."proceso_comparacion"'
+        indexes = [
+            models.Index(fields=["id_orden_compra"], name="fk_proc_comp_ord_comp"),
+            models.Index(fields=["id_operador"], name="fk_proc_comp_op"),
+            models.Index(fields=["id_empresa"], name="fk_id_emp_proc_comp"),
+        ]
+
+    def __str__(self):
+        return f"ProcesoComparacion {self.id}"
+
+
+class AjusteDetalleCompra(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_ajuste_detalle_compra")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_proceso_comparacion = models.ForeignKey(
+        ProcesoComparacion,
+        on_delete=models.RESTRICT,
+        db_column="id_proceso_comparacion",
+        null=True,
+        blank=True,
+    )
+    id_orden_compra = models.ForeignKey(
+        OrdenCompra,
+        on_delete=models.RESTRICT,
+        db_column="id_orden_compra",
+        related_name="ajuste_detalle_compra",
+    )
+    cantidad = models.IntegerField(null=True, blank=True)
+    precio_unitario = models.FloatField()
+    glosa = models.CharField(max_length=100)
+    descuento = models.FloatField()
+    tipo_descuento = models.CharField(max_length=10, null=True, blank=True)
+    total_neto = models.FloatField()
+    id_detalle_compra = models.ForeignKey(
+        DetalleCompra,
+        on_delete=models.RESTRICT,
+        db_column="id_detalle_compra",
+        related_name="ajuste_detalle_compra",
+    )
+
+    class Meta:
+        db_table = '"dm_logistica"."ajuste_detalle_compra"'
+        indexes = [
+            models.Index(fields=["id_detalle_compra"], name="fk_aj_det_compdc"),
+            models.Index(fields=["id_empresa"], name="fk_id_empresa_ajdcomp"),
+            models.Index(fields=["id_proceso_comparacion"], name="fk_id_pc_ajdcomp"),
+            models.Index(fields=["id_orden_compra"], name="fk_id_oc_ajdcomp"),
+        ]
+
+    def __str__(self):
+        return f"AjusteDetalleCompra {self.id}"
+
+
+# -----------------------------------------------------------------------------
+# 7) PROVEEDORES
+# -----------------------------------------------------------------------------
+class Giro(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_giro")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+        related_name="giros_logistica",
+    )
+    descrip_giro = models.CharField(max_length=250)
+    codigo_sii = models.CharField(max_length=10)
+
+    class Meta:
+        db_table = '"dm_logistica"."giro"'
+        verbose_name = "Giro"
+        verbose_name_plural = "Giros"
+        indexes = [
+            models.Index(fields=["id"], name="fk_giro_proveedor1_idx"),
+            models.Index(fields=["id_empresa"], name="fk_id_empresa_giro"),
+        ]
+        unique_together = (("id", "descrip_giro"),)
+
+    def __str__(self):
+        return f"{self.descrip_giro} (ID: {self.id})"
+
+
+class Proveedor(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_proveedor")
+    id_giro = models.ForeignKey(
+        Giro,
+        on_delete=models.RESTRICT,
+        db_column="id_giro",
+        related_name="proveedores",
+        null=True,
+        blank=True,
+    )
+    descrip_giro = models.CharField(max_length=250)
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    rut = models.CharField(max_length=20)
+    nombre_rs = models.CharField(max_length=200)
+    nombre_fantasia = models.CharField(max_length=200, null=True, blank=True)
+    web = models.CharField(max_length=50, null=True, blank=True)
+    fecha_alta = models.DateTimeField(auto_now_add=True)
+    modalidad_pago = models.CharField(max_length=50, default="")
+    plazo_pago = models.IntegerField(null=True, blank=True)
+    estado = models.IntegerField(default=1)
+    direccion = models.CharField(max_length=255, null=True, blank=True)
+    id_comuna = models.IntegerField(null=True, blank=True)
+    id_region = models.IntegerField(null=True, blank=True)
+    proveedor_unico = models.SmallIntegerField(default=0)
+
+    class Meta:
+        db_table = '"dm_logistica"."proveedor"'
+        verbose_name = "Proveedor"
+        verbose_name_plural = "Proveedores"
+        indexes = [
+            models.Index(fields=["id_empresa"], name="fk_id_empresa_proveedor"),
+            models.Index(fields=["id_giro"], name="fk_id_giro_proveedor"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.id_giro:
+            self.descrip_giro = self.id_giro.descrip_giro
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.nombre_rs} (RUT: {self.rut})"
+
+
+class ProveedorTelefono(models.Model):
+    TIPO_TELEFONO_CHOICES = [
+        ("movil", "Móvil"),
+        ("fijo", "Fijo"),
+        ("trabajo", "Trabajo"),
+        ("otro", "Otro"),
+    ]
+    id = models.AutoField(primary_key=True, db_column="id_proveedor_telefono")
+    id_proveedor = models.ForeignKey(
+        Proveedor,
+        on_delete=models.RESTRICT,
+        related_name="telefonosproveedor",
+    )
+    tipo = models.CharField(max_length=20, choices=TIPO_TELEFONO_CHOICES)
+    es_principal = models.BooleanField(default=False)
+    numero = models.CharField(max_length=15)
+
+    class Meta:
+        db_table = '"dm_logistica"."proveedor_telefono"'
+        indexes = [
+            models.Index(fields=["es_principal"], name="fk_esprvtel"),
+            models.Index(fields=["tipo"], name="fk_tipo_proveedor_telefono"),
+        ]
+
+    def __str__(self):
+        return f"{self.tipo} - {self.numero}"
+
+
+class ProveedorContactos(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_proveedor_contacto")
+    id_proveedor = models.ForeignKey(
+        Proveedor, on_delete=models.RESTRICT, db_column="id_proveedor"
+    )
+    relacion_contacto = models.CharField(max_length=50, null=True, blank=True)
+    telefono_contacto = models.CharField(max_length=20, null=True, blank=True)
+    mail_contacto = models.CharField(max_length=50, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."proveedor_contactos"'
+        indexes = [
+            models.Index(fields=["id_proveedor"], name="fk_provcon_prov"),
+            models.Index(fields=["id_proveedor", "relacion_contacto"]),
+        ]
+
+    def __str__(self):
+        return f"{self.id_proveedor} - {self.relacion_contacto}"
+
+
+# -----------------------------------------------------------------------------
+# 8) SERVICIOS (BÁSICOS / CAJA CHICA)
+# -----------------------------------------------------------------------------
+class ServiciosBasicos(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_servicio_basico")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_operador = models.ForeignKey(
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        related_name="servicios_basicos",
+        null=True,
+        blank=True,
+    )
+    id_proveedor = models.ForeignKey(
+        Proveedor,
+        on_delete=models.RESTRICT,
+        db_column="id_proveedor",
+        related_name="servicios_basicos",
+    )
+    item_presupuesto = models.CharField(max_length=6, null=True, blank=True)
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    observacion = models.TextField(null=True, blank=True)
+    id_punto_venta = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."servicios_basicos"'
+        verbose_name = "Servicio Básico"
+        verbose_name_plural = "Servicios Básicos"
+        indexes = [
+            models.Index(fields=["id_empresa"], name="fk_emp_servbas"),
+            models.Index(fields=["id_operador"], name="fk_op_servbas"),
+            models.Index(fields=["id_proveedor"], name="fk_prov_servbas"),
+            models.Index(fields=["id_punto_venta"], name="fk_pv_servbas"),
+        ]
+
+    def __str__(self):
+        return f"Servicio Básico {self.id}"
+
+
+class ServiciosCajaChica(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_servicio_caja_chica")
+    monto = models.FloatField(null=True, blank=True)
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_operador = models.ForeignKey(
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        related_name="servicios_caja_chica_operador",
+    )
+    id_operador_autoriza = models.CharField(max_length=50)
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    fecha_autoriza = models.DateField(null=True, blank=True)
+    nota = models.TextField(null=True, blank=True)
+    estado = models.CharField(max_length=50, null=True, blank=True)
+    motivo_rechazo = models.TextField(null=True, blank=True)
+    archivo = models.CharField(max_length=255, null=True, blank=True)
+    id_parque = models.IntegerField(null=True, blank=True)
+    id_punto_venta = models.IntegerField(null=True, blank=True)  # NUEVO ✔
+    id_solicitante = models.CharField(max_length=50, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."servicios_caja_chica"'
+        verbose_name = "Servicio Caja Chica"
+        verbose_name_plural = "Servicios Caja Chica"
+        indexes = [
+            models.Index(fields=["id_empresa"], name="fk_id_empresa"),
+            models.Index(fields=["estado"], name="estado"),
+            models.Index(fields=["id_punto_venta"], name="id_punto_venta"),
+            models.Index(fields=["fecha_autoriza"], name="fecha_autoriza"),
+            models.Index(fields=["id_operador"], name="fk_op_servcaja"),
+        ]
+
+    def __str__(self):
+        return f"Servicio Caja Chica {self.id}"
+
+
+class ServiciosCajaChicaDetalle(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_servicio_caja_chica_detalle")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+        blank=True,
+    )
+    id_servicio_caja_chica = models.ForeignKey(
+        ServiciosCajaChica,
+        on_delete=models.RESTRICT,
+        db_column="id_servicio_caja_chica",
+        related_name="detalles_caja_chica",
+    )
+    tipo_doc = models.CharField(max_length=50, null=True, blank=True)
+    fecha_emision = models.DateTimeField(null=True, blank=True)
+    razon_social = models.CharField(max_length=50, null=True, blank=True)
+    folio_dt = models.CharField(max_length=50, null=True, blank=True)
+    monto = models.FloatField(null=True, blank=True)
+    detalle = models.CharField(max_length=255, null=True, blank=True)
+    item_presupuesto = models.CharField(max_length=10, null=True, blank=True)
+    archivo = models.CharField(max_length=255, null=True, blank=True)
+    id_operador = models.ForeignKey(
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        related_name="servicios_caja_chica_detalle",
+    )
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."servicios_caja_chica_detalle"'
+        verbose_name = "Detalle de Servicio Caja Chica"
+        verbose_name_plural = "Detalles de Servicio Caja Chica"
+        indexes = [
+            models.Index(fields=["id_servicio_caja_chica"], name="fk_servcajadet"),
+            models.Index(fields=["id_empresa"], name="fk_emp_scchdt"),
+            models.Index(fields=["id_operador"], name="fk_op_scchdt"),
+        ]
+
+    def __str__(self):
+        return f"Detalle {self.id}"
+
+
+# -----------------------------------------------------------------------------
+# 9) SOLICITUDES
+# -----------------------------------------------------------------------------
+class EstadoSolicitudCompra(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_estado_solicitud_compra")
+    descripcion_solicitud_compra = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = '"dm_logistica"."estado_solicitud_compra"'
+        verbose_name = "Estado Solicitud de Compra"
+        verbose_name_plural = "Estados Solicitud de Compra"
+
+    def __str__(self):
+        return self.descripcion_solicitud_compra
+
+
+class TipoSolicitud(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_tipo_solicitud")
+    descripcion = models.CharField(max_length=30, null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."tipo_solicitud"'
+        verbose_name = "Tipo de Solicitud"
+        verbose_name_plural = "Tipos de Solicitud"
+
+    def __str__(self):
+        return self.descripcion or "Sin descripción"
+
+
+class SolicitudCompra(models.Model):
+    id = models.AutoField(primary_key=True, db_column="id_solicitud_compra")
+    id_empresa = models.ForeignKey(
+        "coreempresas.Empresa",
+        on_delete=models.RESTRICT,
+        db_column="id_empresa",
+        null=True,
+    )
+    id_operador = models.ForeignKey(  # ✔ sin coma final
+        "operadores.Operador",
+        on_delete=models.RESTRICT,
+        db_column="id_operador",
+        related_name="solicitudes",
+    )
+    id_aprobador = models.CharField(max_length=50, default="")
+    id_estado_solicitud_compra = models.ForeignKey(
+        EstadoSolicitudCompra,
+        on_delete=models.RESTRICT,
+        db_column="id_estado_solicitud_compra",
+        related_name="solicitudes",
+    )
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    descripcion = models.TextField(null=True, blank=True)
+    fecha_solicitud_compra = models.DateTimeField(null=True, blank=True)
+    id_tipo_solicitud = models.ForeignKey(
+        TipoSolicitud,
+        on_delete=models.RESTRICT,
+        db_column="id_tipo_solicitud",
+        related_name="solicitudes",
+    )
+    titulo = models.CharField(max_length=100, null=True, blank=True)
+    ruta_file = models.CharField(max_length=255, null=True, blank=True)
+    cod_presupuesto = models.CharField(max_length=10, null=True, blank=True)
+    id_punto_venta = models.IntegerField(null=True, blank=True)
+    operador_rechazo = models.CharField(max_length=50, null=True, blank=True)
+    fecha_rechazo = models.DateTimeField(null=True, blank=True)
+    motivo_rechazo = models.TextField(null=True, blank=True)
+    id_requerimiento = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"dm_logistica"."solicitud_compra"'
+        verbose_name = "Solicitud de Compra"
+        verbose_name_plural = "Solicitudes de Compra"
+        indexes = [
+            models.Index(fields=["id_operador"], name="fk_solic_comp_op"),
+            models.Index(fields=["id_empresa"], name="fk_solic_comp_emp"),
+            models.Index(fields=["id_estado_solicitud_compra"], name="fk_solic_comp_esomp"),
+            models.Index(fields=["id_tipo_solicitud"], name="id_tip_sol_sc"),
+            models.Index(fields=["cod_presupuesto"], name="cod_pres_sc"),
+            models.Index(fields=["id_punto_venta"], name="id_punto_venta_sc"),
+            models.Index(fields=["id_requerimiento"], name="id_requerimiento_sc"),
+        ]
+
+    def __str__(self):
+        return f"Solicitud {self.id} - {self.titulo or 'Sin Título'}"

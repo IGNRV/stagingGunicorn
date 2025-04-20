@@ -49,7 +49,7 @@ INSTALLED_APPS = [
     'operadores',
     'tasks',
     'logs',
-    
+    'dm_logistica',
 ]
 
 MIDDLEWARE = [
