@@ -1,4 +1,5 @@
 # ./operadores/views.py
+
 from __future__ import annotations
 
 import os
@@ -25,8 +26,10 @@ from .serializer import (
     OperadorSerializer, OperadorBodegaSerializer,
     OperadorEmpresaModuloSerializer, OperadorEmpresaModuloMenuSerializer,
     OperadorGrupoSerializer, OperadorPuntoVentaSerializer,
-    SesionSerializer, SesionActivaSerializer
+    SesionSerializer, SesionActivaSerializer,
+    ProveedorSerializer            # ← añadimos import
 )
+from dm_logistica.models import Proveedor  # ← añadimos import
 
 
 # ---------------------------------------------------------------------
@@ -344,6 +347,28 @@ class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
                         status=status.HTTP_200_OK)
         resp.delete_cookie("token")
         return resp
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NUEVO: ViewSet para Proveedores filtrados por la empresa del operador en sesión
+# ─────────────────────────────────────────────────────────────────────────────
+class ProveedorEmpresaViewSet(RestrictToReactMixin, viewsets.ReadOnlyModelViewSet):
+    """
+    GET /operadores/ventas/operadores/proveedores-empresa/
+    Devuelve los proveedores cuyo id_empresa coincide con la empresa del operador
+    obtenido de la cookie 'token'.
+    """
+    serializer_class = ProveedorSerializer
+
+    def get_queryset(self):
+        token = self.request.COOKIES.get("token")
+        sesiones = SesionActiva.objects.filter(token=token).order_by("-fecha_registro")
+        if not sesiones.exists():
+            return Proveedor.objects.none()
+        sesion = sesiones.first()
+        # id_empresa puede venir de la propia sesión o del operador
+        empresa_id = sesion.id_empresa_id or sesion.id_operador.id_empresa_id
+        return Proveedor.objects.filter(id_empresa_id=empresa_id)
 
 
 # ---------------------------------------------------------------------

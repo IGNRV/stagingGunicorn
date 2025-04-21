@@ -5,13 +5,13 @@ from .models import (
     Operador, OperadorBodega, OperadorEmpresaModulo, 
     OperadorEmpresaModuloMenu, OperadorGrupo, OperadorPuntoVenta,
     Sesion, SesionActiva
-    # SesionEjecutivo ya NO existe
 )
+from dm_logistica.models import Proveedor  # ← añadimos import
 
 class OperadorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Operador
-        fields = '__all__'  # O especifica los campos que quieras
+        fields = '__all__'
 
 class OperadorBodegaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -48,4 +48,10 @@ class SesionActivaSerializer(serializers.ModelSerializer):
         model = SesionActiva
         fields = '__all__'
 
-# Se elimina la clase SesionEjecutivoSerializer, ya que no existe el modelo
+# ─────────────────────────────────────────────────────────────────────────────
+# NUEVO: Serializer para Proveedor
+# ─────────────────────────────────────────────────────────────────────────────
+class ProveedorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Proveedor
+        fields = '__all__'
