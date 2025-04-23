@@ -5,14 +5,20 @@ from .views import (
     OperadorLoginAPIView,
     OperadorCodigoVerificacionAPIView,
     OperadorSesionActivaTokenAPIView,
-    LogoutAPIView,                       # ← nuevo import
+    OperadorLogoutAPIView,                     # ← nuevo import
 )
 
 urlpatterns = [
-    path("operadores/validar/",            OperadorLoginAPIView.as_view(),              name="operador-login"),
-    path("operadores/verificar/",          OperadorCodigoVerificacionAPIView.as_view(), name="operador-verificar"),
-    path("operadores/sesiones-activas-token/",
-         OperadorSesionActivaTokenAPIView.as_view(),
-         name="operador-sesion-por-token"),
-    path("operadores/logout/",             LogoutAPIView.as_view(),                     name="operador-logout"),  # ← nueva ruta
+    path("operadores/validar/",   OperadorLoginAPIView.as_view(),               name="operador-login"),
+    path("operadores/verificar/", OperadorCodigoVerificacionAPIView.as_view(),  name="operador-verificar"),
+    path(
+        "operadores/sesiones-activas-token/",
+        OperadorSesionActivaTokenAPIView.as_view(),
+        name="operador-sesion-por-token",
+    ),
+    path(                                 # ← nueva ruta
+        "operadores/logout/",
+        OperadorLogoutAPIView.as_view(),
+        name="operador-logout",
+    ),
 ]

@@ -223,6 +223,12 @@ class OperadorLoginAPIView(APIView):
 class OperadorCodigoVerificacionAPIView(APIView):
     """
     POST /dm_sistema/operadores/verificar/
+
+    Body:
+    {
+        "username": "",
+        "cod_verificacion": ""
+    }
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -259,7 +265,11 @@ class OperadorCodigoVerificacionAPIView(APIView):
                 .exclude(pk=sesion_activa.pk)
                 .delete())
 
+        # ------------------------------------------------------------------ #
+        # Construimos la respuesta (sin token)                               #
+        # ------------------------------------------------------------------ #
         payload = build_payload(op)
+
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -269,6 +279,13 @@ class OperadorCodigoVerificacionAPIView(APIView):
 class OperadorSesionActivaTokenAPIView(APIView):
     """
     GET /dm_sistema/operadores/sesiones-activas-token/
+
+    Devuelve:
+    {
+        "operador": { ... },
+        "modulos":  [ ... ],
+        "funcionalidades": [ ... ]
+    }
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -298,20 +315,19 @@ class OperadorSesionActivaTokenAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  LOGOUT                                                                   #
+#  LOGOUT – elimina la sesión activa referida por la cookie                 #
 # ------------------------------------------------------------------------- #
-class LogoutAPIView(APIView):
+class OperadorLogoutAPIView(APIView):
     """
-    POST /dm_sistema/operadores/logout/
+    GET /dm_sistema/operadores/logout/
 
     • El cliente debe enviar la cookie `auth_token`.
-    • Si existe en dm_sistema.sesiones_activas, se elimina la fila y se
-      invalida la cookie en el navegador.
+    • Se elimina la fila correspondiente en dm_sistema.sesiones_activas.
     """
     authentication_classes: list = []
     permission_classes:     list = []
 
-    def post(self, request, *args, **kwargs):
+    def get(self, request, *args, **kwargs):
         token_cookie = request.COOKIES.get("auth_token")
         if not token_cookie:
             return Response(
@@ -320,15 +336,20 @@ class LogoutAPIView(APIView):
             )
 
         deleted, _ = SesionesActivas.objects.filter(token=token_cookie).delete()
-        if not deleted:
-            return Response(
-                {"detail": "Token inválido o sesión ya cerrada"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
 
+        # Siempre devolvemos 200 para no revelar si el token ya había sido
+        # invalidado; basta con “ok” si se recibió la petición.
         response = Response(
             {"detail": "Sesión cerrada correctamente"},
             status=status.HTTP_200_OK,
         )
-        response.delete_cookie("auth_token")
+        # Quitamos la cookie del navegador
+        response.set_cookie(
+            key="auth_token",
+            value="",
+            max_age=0,
+            httponly=True,
+            secure=True,
+            samesite="Lax",
+        )
         return response
