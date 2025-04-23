@@ -18,6 +18,7 @@ from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
+    OperadorSerializer,               # ← nuevo import
 )
 
 # ------------------------------------------------------------------------- #
@@ -188,3 +189,42 @@ class OperadorCodigoVerificacionAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ------------------------------------------------------------------------- #
+#  OBTENER OPERADOR POR TOKEN (COOKIE)                                       #
+# ------------------------------------------------------------------------- #
+class OperadorSesionActivaTokenAPIView(APIView):
+    """
+    GET /dm_sistema/operadores/sesiones-activas-token/
+
+    • El cliente debe enviar la cookie `auth_token` recibida tras el login.
+    • Si coincide con una fila de dm_sistema.sesiones_activas se responde con
+      la fila completa de dm_sistema.operador asociada.
+    """
+    authentication_classes: list = []   # pública: validamos a mano
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        operador = sesion_activa.id_operador
+        data     = OperadorSerializer(operador).data
+        return Response(data, status=status.HTTP_200_OK)

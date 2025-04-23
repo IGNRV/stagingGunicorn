@@ -1,5 +1,6 @@
 # ./dm_sistema/serializer.py
 from rest_framework import serializers
+from .models import Operador
 
 
 class OperadorLoginSerializer(serializers.Serializer):
@@ -24,3 +25,14 @@ class OperadorVerificarSerializer(serializers.Serializer):
     """
     username = serializers.CharField(max_length=50, trim_whitespace=True)
     cod_verificacion = serializers.CharField(max_length=255, trim_whitespace=True)
+
+
+class OperadorSerializer(serializers.ModelSerializer):
+    """
+    Serializa **todas** las columnas de dm_sistema.operador para
+    reenviarlas al cliente tal cual las entrega la BD.
+    """
+    class Meta:
+        model  = Operador
+        # `fields="__all__"` incluye cada columna del modelo autogenerado
+        fields = "__all__"
