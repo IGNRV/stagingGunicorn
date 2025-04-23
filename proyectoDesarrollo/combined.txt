@@ -843,6 +843,7 @@ class DmLogisticaConfig(AppConfig):
 === ./dm_sistema/serializer.py ===
 # ./dm_sistema/serializer.py
 from rest_framework import serializers
+from .models import Operador
 
 
 class OperadorLoginSerializer(serializers.Serializer):
@@ -869,6 +870,17 @@ class OperadorVerificarSerializer(serializers.Serializer):
     cod_verificacion = serializers.CharField(max_length=255, trim_whitespace=True)
 
 
+class OperadorSerializer(serializers.ModelSerializer):
+    """
+    Serializa **todas** las columnas de dm_sistema.operador para
+    reenviarlas al cliente tal cual las entrega la BD.
+    """
+    class Meta:
+        model  = Operador
+        # `fields="__all__"` incluye cada columna del modelo autogenerado
+        fields = "__all__"
+
+
 === ./dm_sistema/admin.py ===
 from django.contrib import admin
 
@@ -882,11 +894,17 @@ from django.urls import path
 from .views import (
     OperadorLoginAPIView,
     OperadorCodigoVerificacionAPIView,
+    OperadorSesionActivaTokenAPIView,      # ← nuevo import
 )
 
 urlpatterns = [
-    path("operadores/validar/",  OperadorLoginAPIView.as_view(),            name="operador-login"),
+    path("operadores/validar/",   OperadorLoginAPIView.as_view(),             name="operador-login"),
     path("operadores/verificar/", OperadorCodigoVerificacionAPIView.as_view(), name="operador-verificar"),
+    path(
+        "operadores/sesiones-activas-token/",
+        OperadorSesionActivaTokenAPIView.as_view(),
+        name="operador-sesion-por-token",
+    ),
 ]
 
 
@@ -917,6 +935,7 @@ from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
+    OperadorSerializer,               # ← nuevo import
 )
 
 # ------------------------------------------------------------------------- #
@@ -1087,6 +1106,45 @@ class OperadorCodigoVerificacionAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ------------------------------------------------------------------------- #
+#  OBTENER OPERADOR POR TOKEN (COOKIE)                                       #
+# ------------------------------------------------------------------------- #
+class OperadorSesionActivaTokenAPIView(APIView):
+    """
+    GET /dm_sistema/operadores/sesiones-activas-token/
+
+    • El cliente debe enviar la cookie `auth_token` recibida tras el login.
+    • Si coincide con una fila de dm_sistema.sesiones_activas se responde con
+      la fila completa de dm_sistema.operador asociada.
+    """
+    authentication_classes: list = []   # pública: validamos a mano
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        operador = sesion_activa.id_operador
+        data     = OperadorSerializer(operador).data
+        return Response(data, status=status.HTTP_200_OK)
 
 
 === ./dm_sistema/models.py ===

@@ -8,7 +8,7 @@ import requests
 from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
-from django.db import transaction
+from django.db import transaction, connection       # ← se añade `connection`
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -18,7 +18,7 @@ from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
-    OperadorSerializer,               # ← nuevo import
+    OperadorSerializer,
 )
 
 # ------------------------------------------------------------------------- #
@@ -192,18 +192,35 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR POR TOKEN (COOKIE)                                       #
+#  OBTENER OPERADOR Y MÓDULOS POR TOKEN (COOKIE)                            #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
     GET /dm_sistema/operadores/sesiones-activas-token/
 
-    • El cliente debe enviar la cookie `auth_token` recibida tras el login.
-    • Si coincide con una fila de dm_sistema.sesiones_activas se responde con
-      la fila completa de dm_sistema.operador asociada.
+    • El cliente debe enviar la cookie `auth_token`.
+    • Si coincide con una fila de dm_sistema.sesiones_activas se responde con:
+        - La fila completa de dm_sistema.operador
+        - Un arreglo `modulos` con los módulos habilitados.
     """
     authentication_classes: list = []   # pública: validamos a mano
     permission_classes:     list = []
+
+    QUERY_MODULOS = """
+        SELECT c.nombre_menu,
+               b.id_modulo,
+               c.icon
+          FROM dm_sistema.operador_empresa_modulos     a
+    INNER JOIN dm_sistema.empresa_modulo           b
+            ON a.id_empresa_modulo = b.id_modulo
+    INNER JOIN dm_sistema.modulos                   c
+            ON b.id_modulo         = c.id
+         WHERE a.id_operador = %s
+           AND b.estado      = 1
+           AND c.estado      = 1
+           AND b.id_empresa  = %s
+      ORDER BY c.orden
+    """
 
     def get(self, request, *args, **kwargs):
         token_cookie = request.COOKIES.get("auth_token")
@@ -226,5 +243,29 @@ class OperadorSesionActivaTokenAPIView(APIView):
             )
 
         operador = sesion_activa.id_operador
-        data     = OperadorSerializer(operador).data
-        return Response(data, status=status.HTTP_200_OK)
+        operador_dict = OperadorSerializer(operador).data
+
+        # ------------------------------------------------------------------ #
+        # Ejecutamos la query de módulos                                     #
+        # ------------------------------------------------------------------ #
+        with connection.cursor() as cursor:
+            cursor.execute(
+                self.QUERY_MODULOS,
+                [operador.id, operador.id_empresa_id],
+            )
+            rows = cursor.fetchall()
+
+        modulos = [
+            {
+                "nombre_menu": row[0],
+                "id_modulo":   row[1],
+                "icon":        row[2],
+            }
+            for row in rows
+        ]
+
+        respuesta = {
+            "operador": operador_dict,
+            "modulos":  modulos,
+        }
+        return Response(respuesta, status=status.HTTP_200_OK)
