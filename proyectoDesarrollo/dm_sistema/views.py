@@ -1,366 +1,54 @@
+# ./dm_sistema/views.py
+
 from __future__ import annotations
 
-import os
-import jwt
-import secrets
-import requests
 import crypt
-from datetime import datetime, timedelta
 
-from django.conf import settings
-from django.core.exceptions import PermissionDenied
-from django.db import connection
-from django.utils import timezone
-from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import (
-    Operador,
-    OperadorBodega,
-    OperadorEmpresaModulo,
-    OperadorEmpresaModuloMenu,
-    OperadorGrupo,
-    OperadorPuntoVenta,
-    Sesion,
-    SesionActiva
-)
-from .serializer import (
-    OperadorSerializer,
-    OperadorBodegaSerializer,
-    OperadorEmpresaModuloSerializer,
-    OperadorEmpresaModuloMenuSerializer,
-    OperadorGrupoSerializer,
-    OperadorPuntoVentaSerializer,
-    SesionSerializer,
-    SesionActivaSerializer,
-    ProveedorSerializer
-)
-from dm_logistica.models import Proveedor
+from .models import Operador
+from .serializer import OperadorLoginSerializer
 
 
-class RestrictToReactMixin:
-    _BASE_ORIGINS = {
-        "http://localhost:5173",
-        "https://desarrollo.smartgest.cl"
+class OperadorLoginAPIView(APIView):
+    """
+    POST /dm_sistema/operadores/validar/
+
+    Body JSON:
+    {
+        "username": "usuario",
+        "password": "secreto"
     }
-    EXTRA_ORIGINS = set(
-        origin.strip()
-        for origin in os.getenv("ALLOWED_CORS_ORIGINS", "").split(",")
-        if origin.strip()
-    )
-    ALLOWED_ORIGINS = _BASE_ORIGINS | EXTRA_ORIGINS
+    """
+    authentication_classes: list = []  # ruta pública
+    permission_classes:     list = []
 
-    def initial(self, request, *args, **kwargs):
-        origin = request.META.get("HTTP_ORIGIN")
-        if origin is not None and origin not in self.ALLOWED_ORIGINS:
-            raise PermissionDenied("Acceso denegado por CORS.")
-        return super().initial(request, *args, **kwargs)
+    def post(self, request, *args, **kwargs):
+        serializer = OperadorLoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        username = serializer.validated_data["username"]
+        password = serializer.validated_data["password"]
 
-def enviar_correo_python(remitente: str, correo_destino: str, asunto: str, detalle: str) -> None:
-    try:
-        requests.post(
-            "http://mail.smartgest.cl/mailserver/server_mail.php",
-            data={
-                "destino": correo_destino,
-                "asunto":  asunto,
-                "detalle": detalle,
-                "from":    remitente,
-            },
-            timeout=8,
-        )
-    except Exception as exc:
-        print(f"[WARN] Falló el envío de correo: {exc}")
-
-
-class OperadorViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
-    queryset = Operador.objects.all()
-    serializer_class = OperadorSerializer
-
-    @action(detail=False, methods=["post"])
-    def validar(self, request):
-        username = request.data.get("username")
-        password = request.data.get("password")
-        if not username or not password:
-            return Response({"error": "Se requieren 'username' y 'password'."},
-                            status=status.HTTP_400_BAD_REQUEST)
         try:
-            op = Operador.objects.get(username=username)
+            operador = Operador.objects.get(username=username)
         except Operador.DoesNotExist:
-            return Response({"error": "No existe un operador con esos datos."},
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Credenciales inválidas"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
-        if op.estado != 1:
-            return Response({"error": "El usuario no se encuentra activo."},
-                            status=status.HTTP_403_FORBIDDEN)
-        if op.id_empresa.estado != 1:
-            return Response({"error": "La empresa asociada no está activa."},
-                            status=status.HTTP_403_FORBIDDEN)
-        if op.conexion_fallida > 2:
-            return Response({"error": "Cuenta bloqueada."},
-                            status=status.HTTP_403_FORBIDDEN)
+        password_hash = operador.password or ""
+        if password_hash and crypt.crypt(password, password_hash) == password_hash:
+            return Response(
+                {"detail": "Credenciales válidas"},
+                status=status.HTTP_200_OK,
+            )
 
-        if crypt.crypt(password, op.password) != op.password:
-            op.conexion_fallida += 1
-            op.save(update_fields=["conexion_fallida"])
-            return Response({"error": "Credenciales incorrectas."},
-                            status=status.HTTP_404_NOT_FOUND)
-
-        if op.conexion_fallida:
-            op.conexion_fallida = 0
-            op.save(update_fields=["conexion_fallida"])
-
-        token = jwt.encode(
-            {"id": op.id, "username": op.username,
-             "exp": datetime.utcnow() + timedelta(hours=24)},
-            settings.SECRET_KEY, algorithm="HS256"
+        return Response(
+            {"detail": "Credenciales inválidas"},
+            status=status.HTTP_401_UNAUTHORIZED,
         )
-        ip = request.META.get("HTTP_X_FORWARDED_FOR",
-                              request.META.get("REMOTE_ADDR", ""))
-        if "," in ip:
-            ip = ip.split(",")[0].strip()
-
-        sesion = Sesion.objects.create(
-            ip=ip, fecha=timezone.now(),
-            id_operador=op, id_empresa=op.id_empresa,
-        )
-        codigo = secrets.token_hex(16)
-        SesionActiva.objects.create(
-            id_operador=op, id_sesion=sesion,
-            id_empresa=op.id_empresa, fecha_registro=timezone.now(),
-            token=token, cod_verificacion=codigo,
-        )
-        enviar_correo_python("DM", op.username,
-                             "Código de Verificación", f"Tu código es: {codigo}")
-        return Response({"username": op.username}, status=status.HTTP_200_OK)
-
-    @action(detail=False, methods=["post"])
-    def verificar(self, request):
-        username = request.data.get("username")
-        codigo   = request.data.get("cod_verificacion")
-        if not username or not codigo:
-            return Response({"error": "Faltan datos."},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        sesiones = (SesionActiva.objects
-                    .filter(id_operador__username=username)
-                    .order_by("-fecha_registro"))
-        if not sesiones.exists():
-            return Response({"error": "Sin sesión activa."},
-                            status=status.HTTP_404_NOT_FOUND)
-
-        sesion_reciente = sesiones.first()
-        if sesion_reciente.cod_verificacion != codigo:
-            return Response({"error": "Código inválido."},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        op = sesion_reciente.id_operador
-        SesionActiva.objects.filter(id_operador=op).exclude(
-            id=sesion_reciente.id).delete()
-
-        if op.id_empresa.estado != 1:
-            sesion_reciente.delete()
-            return Response({"error": "Empresa desactivada."},
-                            status=status.HTTP_403_FORBIDDEN)
-
-        # ——— módulos ———
-        modulos = []
-        with connection.cursor() as cur:
-            cur.execute(
-                """
-                SELECT c.nombre_menu, b.id_empresa_modulo, c.icon
-                  FROM dm_sistema.operador_empresa_modulos a
-            INNER JOIN dm_sistema.empresa_modulos     b
-                    ON a.id_empresa_modulo = b.id_empresa_modulo
-            INNER JOIN dm_sistema.modulos             c
-                    ON b.id_modulo         = c.id_modulo
-                 WHERE a.id_operador = %s
-                   AND b.estado      = 1
-                   AND c.estado      = 1
-                   AND b.id_empresa  = %s
-              ORDER BY c.orden;
-                """,
-                [op.id, op.id_empresa_id],
-            )
-            for nombre_menu, id_em, icon in cur.fetchall():
-                modulos.append({"nombre_menu": nombre_menu, "id": id_em, "icon": icon})
-
-        # ——— funcionalidades ———
-        funcionalidades = []
-        with connection.cursor() as cur:
-            cur.execute(
-                """
-                SELECT m.id_menu, m.url, m.texto, m.etiqueta, m.descripcion,
-                       m.nivel_menu, m.orden, m.modificable, m.separador_up,
-                       m.id_modulo
-                  FROM dm_sistema.operador                           o
-            INNER JOIN dm_sistema.operador_empresa_modulos_menu    oemm
-                    ON o.id_operador          = oemm.id_operador
-            INNER JOIN dm_sistema.empresa_modulos_menu             emm
-                    ON oemm.id_empresa_modulo_menu = emm.id_empresa_modulo_menu
-            INNER JOIN dm_sistema.menus                            m
-                    ON emm.id_menu            = m.id_menu
-                 WHERE o.id_operador = %s;
-                """,
-                [op.id],
-            )
-            for row in cur.fetchall():
-                funcionalidades.append({
-                    "id":           row[0],
-                    "url":          row[1],
-                    "texto":        row[2],
-                    "etiqueta":     row[3],
-                    "descripcion":  row[4],
-                    "nivel_menu":   row[5],
-                    "orden":        row[6],
-                    "modificable":  row[7],
-                    "separador_up": row[8],
-                    "modulo_id":    row[9],
-                })
-
-        resp = Response({
-            "message":        "Verificación exitosa.",
-            "operador":       OperadorSerializer(op).data,
-            "modulos":        modulos,
-            "funcionalidades": funcionalidades,
-        }, status=status.HTTP_200_OK)
-        resp.set_cookie("token", sesion_reciente.token,
-                        httponly=True, secure=True,
-                        max_age=24*3600, samesite="None")
-        return resp
-
-    @action(detail=False, methods=["get"])
-    def logout(self, request):
-        token = request.COOKIES.get("token")
-        if not token:
-            return Response({"error": "Sin cookie 'token'."},
-                            status=status.HTTP_401_UNAUTHORIZED)
-        sesiones = SesionActiva.objects.filter(token=token).order_by("-fecha_registro")
-        if not sesiones.exists():
-            return Response({"error": "Token inválido."},
-                            status=status.HTTP_404_NOT_FOUND)
-        sesiones.delete()
-        resp = Response({"message": "Sesión cerrada."}, status=status.HTTP_200_OK)
-        resp.delete_cookie("token")
-        return resp
-
-
-class ProveedorEmpresaViewSet(RestrictToReactMixin, viewsets.ReadOnlyModelViewSet):
-    serializer_class = ProveedorSerializer
-    def get_queryset(self):
-        token = self.request.COOKIES.get("token")
-        sesiones = SesionActiva.objects.filter(token=token).order_by("-fecha_registro")
-        if not sesiones.exists():
-            return Proveedor.objects.none()
-        sesion = sesiones.first()
-        empresa = sesion.id_empresa_id or sesion.id_operador.id_empresa_id
-        return Proveedor.objects.filter(id_empresa_id=empresa)
-
-
-class OperadorBodegaViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
-    queryset = OperadorBodega.objects.all()
-    serializer_class = OperadorBodegaSerializer
-
-class OperadorEmpresaModuloViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
-    queryset = OperadorEmpresaModulo.objects.all()
-    serializer_class = OperadorEmpresaModuloSerializer
-
-class OperadorEmpresaModuloMenuViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
-    queryset = OperadorEmpresaModuloMenu.objects.all()
-    serializer_class = OperadorEmpresaModuloMenuSerializer
-
-class OperadorGrupoViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
-    queryset = OperadorGrupo.objects.all()
-    serializer_class = OperadorGrupoSerializer
-
-class OperadorPuntoVentaViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
-    queryset = OperadorPuntoVenta.objects.all()
-    serializer_class = OperadorPuntoVentaSerializer
-
-class SesionViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
-    queryset = Sesion.objects.all()
-    serializer_class = SesionSerializer
-
-class SesionActivaViewSet(RestrictToReactMixin, viewsets.ModelViewSet):
-    queryset = SesionActiva.objects.all()
-    serializer_class = SesionActivaSerializer
-
-
-class OperadorByTokenViewSet(RestrictToReactMixin, viewsets.ViewSet):
-    def get_by_cookie(self, request):
-        token = request.COOKIES.get("token")
-        if not token:
-            return Response({"error": "Sin cookie 'token'."},
-                            status=status.HTTP_401_UNAUTHORIZED)
-
-        sesiones = (SesionActiva.objects.select_related("id_operador")
-                    .filter(token=token).order_by("-fecha_registro"))
-        if not sesiones.exists():
-            return Response({"error": "Token no válido."},
-                            status=status.HTTP_404_NOT_FOUND)
-        sesion_activa = sesiones.first()
-        sesiones.exclude(id=sesion_activa.id).delete()
-        op = sesion_activa.id_operador
-        if op.id_empresa.estado != 1:
-            sesion_activa.delete()
-            return Response({"error": "Empresa desactivada."},
-                            status=status.HTTP_403_FORBIDDEN)
-
-        modulos = []
-        with connection.cursor() as cur:
-            cur.execute(
-                """
-                SELECT c.nombre_menu, b.id_empresa_modulo, c.icon
-                  FROM dm_sistema.operador_empresa_modulos a
-            INNER JOIN dm_sistema.empresa_modulos     b
-                    ON a.id_empresa_modulo = b.id_empresa_modulo
-            INNER JOIN dm_sistema.modulos             c
-                    ON b.id_modulo         = c.id_modulo
-                 WHERE a.id_operador = %s
-                   AND b.estado      = 1
-                   AND c.estado      = 1
-                   AND b.id_empresa  = %s
-              ORDER BY c.orden;
-                """, [op.id, op.id_empresa_id],
-            )
-            for nombre_menu, id_em, icon in cur.fetchall():
-                modulos.append({"nombre_menu": nombre_menu, "id": id_em, "icon": icon})
-
-        funcionalidades = []
-        with connection.cursor() as cur:
-            cur.execute(
-                """
-                SELECT m.id_menu, m.url, m.texto, m.etiqueta, m.descripcion,
-                       m.nivel_menu, m.orden, m.modificable, m.separador_up,
-                       m.id_modulo
-                  FROM dm_sistema.operador                           o
-            INNER JOIN dm_sistema.operador_empresa_modulos_menu    oemm
-                    ON o.id_operador          = oemm.id_operador
-            INNER JOIN dm_sistema.empresa_modulos_menu             emm
-                    ON oemm.id_empresa_modulo_menu = emm.id_empresa_modulo_menu
-            INNER JOIN dm_sistema.menus                            m
-                    ON emm.id_menu            = m.id_menu
-                 WHERE o.id_operador = %s;
-                """, [op.id],
-            )
-            for row in cur.fetchall():
-                funcionalidades.append({
-                    "id":           row[0],
-                    "url":          row[1],
-                    "texto":        row[2],
-                    "etiqueta":     row[3],
-                    "descripcion":  row[4],
-                    "nivel_menu":   row[5],
-                    "orden":        row[6],
-                    "modificable":  row[7],
-                    "separador_up": row[8],
-                    "modulo_id":    row[9],
-                })
-
-        return Response({
-            "sesion_activa":   SesionActivaSerializer(sesion_activa).data,
-            "operador_data":   OperadorSerializer(op).data,
-            "modulos":         modulos,
-            "funcionalidades": funcionalidades,
-        }, status=status.HTTP_200_OK)

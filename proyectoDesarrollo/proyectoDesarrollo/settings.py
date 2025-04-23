@@ -49,8 +49,9 @@ INSTALLED_APPS = [
     #'operadores',
     #'tasks',
     #'logs',
-    #'dm_logistica',
+    'dm_logistica',
     'dm_sistema',
+    'dm_requerimientos',
 ]
 
 MIDDLEWARE = [

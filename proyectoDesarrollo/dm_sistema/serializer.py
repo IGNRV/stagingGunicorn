@@ -1,57 +1,23 @@
+# ./dm_sistema/serializer.py
+
 from rest_framework import serializers
-from .models import (
-    Operador,
-    OperadorBodega,
-    OperadorEmpresaModulo,
-    OperadorEmpresaModuloMenu,
-    OperadorGrupo,
-    OperadorPuntoVenta,
-    Sesion,
-    SesionActiva
-)
-from dm_logistica.models import Proveedor
 
-class OperadorSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Operador
-        fields = '__all__'
 
-class OperadorBodegaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = OperadorBodega
-        fields = '__all__'
-
-class OperadorEmpresaModuloSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = OperadorEmpresaModulo
-        fields = '__all__'
-
-class OperadorEmpresaModuloMenuSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = OperadorEmpresaModuloMenu
-        fields = '__all__'
-
-class OperadorGrupoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = OperadorGrupo
-        fields = '__all__'
-
-class OperadorPuntoVentaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = OperadorPuntoVenta
-        fields = '__all__'
-
-class SesionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Sesion
-        fields = '__all__'
-
-class SesionActivaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SesionActiva
-        fields = '__all__'
-
-class ProveedorSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Proveedor
-        fields = '__all__'
+class OperadorLoginSerializer(serializers.Serializer):
+    """
+    Valida la estructura del body JSON:
+    {
+        "username": "",
+        "password": ""
+    }
+    """
+    username = serializers.CharField(
+        max_length=50,
+        required=True,
+        trim_whitespace=True
+    )
+    password = serializers.CharField(
+        max_length=128,         # tamaño suficiente para la clave en texto plano
+        required=True,
+        write_only=True         # nunca se devuelve al cliente
+    )
