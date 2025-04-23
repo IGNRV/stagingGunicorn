@@ -223,12 +223,6 @@ class OperadorLoginAPIView(APIView):
 class OperadorCodigoVerificacionAPIView(APIView):
     """
     POST /dm_sistema/operadores/verificar/
-
-    Body:
-    {
-        "username": "",
-        "cod_verificacion": ""
-    }
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -265,11 +259,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
                 .exclude(pk=sesion_activa.pk)
                 .delete())
 
-        # ------------------------------------------------------------------ #
-        # Construimos la respuesta (sin token)                               #
-        # ------------------------------------------------------------------ #
         payload = build_payload(op)
-
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -279,13 +269,6 @@ class OperadorCodigoVerificacionAPIView(APIView):
 class OperadorSesionActivaTokenAPIView(APIView):
     """
     GET /dm_sistema/operadores/sesiones-activas-token/
-
-    Devuelve:
-    {
-        "operador": { ... },
-        "modulos":  [ ... ],
-        "funcionalidades": [ ... ]
-    }
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -312,3 +295,40 @@ class OperadorSesionActivaTokenAPIView(APIView):
 
         respuesta = build_payload(sesion_activa.id_operador)
         return Response(respuesta, status=status.HTTP_200_OK)
+
+
+# ------------------------------------------------------------------------- #
+#  LOGOUT                                                                   #
+# ------------------------------------------------------------------------- #
+class LogoutAPIView(APIView):
+    """
+    POST /dm_sistema/operadores/logout/
+
+    • El cliente debe enviar la cookie `auth_token`.
+    • Si existe en dm_sistema.sesiones_activas, se elimina la fila y se
+      invalida la cookie en el navegador.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        deleted, _ = SesionesActivas.objects.filter(token=token_cookie).delete()
+        if not deleted:
+            return Response(
+                {"detail": "Token inválido o sesión ya cerrada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        response = Response(
+            {"detail": "Sesión cerrada correctamente"},
+            status=status.HTTP_200_OK,
+        )
+        response.delete_cookie("auth_token")
+        return response
