@@ -4,6 +4,7 @@ from __future__ import annotations
 import crypt
 import secrets
 import jwt
+import requests                       # ← añadimos import
 from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
@@ -15,6 +16,31 @@ from rest_framework.views import APIView
 
 from .models import Operador, Sesiones, SesionesActivas
 from .serializer import OperadorLoginSerializer
+
+
+# ------------------------------------------------------------------------- #
+# Función auxiliar para enviar correos usando el micro-servicio legado      #
+# ------------------------------------------------------------------------- #
+def enviar_correo_python(
+    remitente: str,
+    correo_destino: str,
+    asunto: str,
+    detalle: str,
+) -> None:
+    """Consume el micro-servicio PHP legado que envía correos."""
+    try:
+        requests.post(
+            "http://mail.smartgest.cl/mailserver/server_mail.php",
+            data={
+                "destino": correo_destino,
+                "asunto":  asunto,
+                "detalle": detalle,
+                "from":    remitente,
+            },
+            timeout=8,
+        )
+    except Exception as exc:                 # pragma: no cover
+        print(f"[WARN] Falló el envío de correo: {exc}")
 
 
 class OperadorLoginAPIView(APIView):
@@ -38,7 +64,7 @@ class OperadorLoginAPIView(APIView):
         """Obtiene la IP real del cliente, incluso detrás de proxies/Nginx."""
         x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
         if x_forwarded_for:
-            # X-Forwarded-For puede traer una lista de IPs -> tomamos la primera
+            # X-Forwarded-For puede traer una lista de IPs → tomamos la primera
             return x_forwarded_for.split(",")[0].strip()
         return request.META.get("REMOTE_ADDR", "")
 
@@ -105,7 +131,17 @@ class OperadorLoginAPIView(APIView):
             )
 
         # ------------------------------------------------------------------ #
-        # 3. Respondemos al cliente                                          #
+        # 3. Enviamos el código de verificación al correo del usuario        #
+        # ------------------------------------------------------------------ #
+        enviar_correo_python(
+            "DM",
+            operador.username,                       # el username es el correo
+            "Código de Verificación",
+            f"Hola, tu código es: {cod_verificacion}",
+        )
+
+        # ------------------------------------------------------------------ #
+        # 4. Respondemos al cliente                                          #
         # ------------------------------------------------------------------ #
         return Response(
             {
