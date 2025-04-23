@@ -22,6 +22,39 @@ from .serializer import (
 )
 
 # ------------------------------------------------------------------------- #
+#  CONSTANTES SQL – SE COMPARTEN ENTRE LOS ENDPOINTS                        #
+# ------------------------------------------------------------------------- #
+QUERY_MODULOS = """
+    SELECT c.nombre_menu,
+           b.id_modulo,
+           c.icon
+      FROM dm_sistema.operador_empresa_modulos     a
+INNER JOIN dm_sistema.empresa_modulo           b
+        ON a.id_empresa_modulo = b.id_modulo
+INNER JOIN dm_sistema.modulos                   c
+        ON b.id_modulo         = c.id
+     WHERE a.id_operador = %s
+       AND b.estado      = 1
+       AND c.estado      = 1
+       AND b.id_empresa  = %s
+  ORDER BY c.orden
+"""
+
+QUERY_FUNCIONALIDADES = """
+    SELECT m.id, m.url, m.texto, m.etiqueta, m.descripcion,
+           m.nivel_menu, m.orden, m.modificable, m.separador_up,
+           m.id_modulo
+      FROM dm_sistema.operador                        o
+INNER JOIN dm_sistema.operador_empresa_modulos_menu oemm
+        ON o.id                   = oemm.id_operador
+INNER JOIN dm_sistema.empresa_modulos_menu          emm
+        ON oemm.id_empresa_modulos_menu = emm.id_empresa_modulo
+INNER JOIN dm_sistema.menus                        m
+        ON emm.id_menu              = m.id
+     WHERE o.id = %s
+"""
+
+# ------------------------------------------------------------------------- #
 # Función auxiliar para enviar correos                                       #
 # ------------------------------------------------------------------------- #
 def enviar_correo_python(
@@ -43,6 +76,57 @@ def enviar_correo_python(
         )
     except Exception as exc:                 # pragma: no cover
         print(f"[WARN] Falló el envío de correo: {exc}")
+
+
+# ------------------------------------------------------------------------- #
+#  HELPER → arma operador/modulos/funcionalidades                            #
+# ------------------------------------------------------------------------- #
+def build_payload(operador: Operador) -> dict:
+    """
+    Devuelve un diccionario con:
+        • operador
+        • modulos
+        • funcionalidades
+    """
+    operador_dict = OperadorSerializer(operador).data
+
+    with connection.cursor() as cursor:
+        # -------------------------- MÓDULOS ------------------------------ #
+        cursor.execute(QUERY_MODULOS, [operador.id, operador.id_empresa_id])
+        mod_rows = cursor.fetchall()
+        modulos = [
+            {
+                "nombre_menu": row[0],
+                "id_modulo":   row[1],
+                "icon":        row[2],
+            }
+            for row in mod_rows
+        ]
+
+        # ----------------------- FUNCIONALIDADES ------------------------- #
+        cursor.execute(QUERY_FUNCIONALIDADES, [operador.id])
+        func_rows = cursor.fetchall()
+        funcionalidades = [
+            {
+                "id":            row[0],
+                "url":           row[1],
+                "texto":         row[2],
+                "etiqueta":      row[3],
+                "descripcion":   row[4],
+                "nivel_menu":    row[5],
+                "orden":         row[6],
+                "modificable":   row[7],
+                "separador_up":  row[8],
+                "id_modulo":     row[9],
+            }
+            for row in func_rows
+        ]
+
+    return {
+        "operador":        operador_dict,
+        "modulos":         modulos,
+        "funcionalidades": funcionalidades,
+    }
 
 
 # ------------------------------------------------------------------------- #
@@ -181,13 +265,12 @@ class OperadorCodigoVerificacionAPIView(APIView):
                 .exclude(pk=sesion_activa.pk)
                 .delete())
 
-        return Response(
-            {
-                "detail": "Código verificado correctamente",
-                "token":  sesion_activa.token,
-            },
-            status=status.HTTP_200_OK,
-        )
+        # ------------------------------------------------------------------ #
+        # Construimos la respuesta (sin token)                               #
+        # ------------------------------------------------------------------ #
+        payload = build_payload(op)
+
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -206,36 +289,6 @@ class OperadorSesionActivaTokenAPIView(APIView):
     """
     authentication_classes: list = []
     permission_classes:     list = []
-
-    QUERY_MODULOS = """
-        SELECT c.nombre_menu,
-               b.id_modulo,
-               c.icon
-          FROM dm_sistema.operador_empresa_modulos     a
-    INNER JOIN dm_sistema.empresa_modulo           b
-            ON a.id_empresa_modulo = b.id_modulo
-    INNER JOIN dm_sistema.modulos                   c
-            ON b.id_modulo         = c.id
-         WHERE a.id_operador = %s
-           AND b.estado      = 1
-           AND c.estado      = 1
-           AND b.id_empresa  = %s
-      ORDER BY c.orden
-    """
-
-    QUERY_FUNCIONALIDADES = """
-        SELECT m.id, m.url, m.texto, m.etiqueta, m.descripcion,
-               m.nivel_menu, m.orden, m.modificable, m.separador_up,
-               m.id_modulo
-          FROM dm_sistema.operador                        o
-    INNER JOIN dm_sistema.operador_empresa_modulos_menu oemm
-            ON o.id                   = oemm.id_operador
-    INNER JOIN dm_sistema.empresa_modulos_menu          emm
-            ON oemm.id_empresa_modulos_menu = emm.id_empresa_modulo
-    INNER JOIN dm_sistema.menus                        m
-            ON emm.id_menu              = m.id
-         WHERE o.id = %s
-    """
 
     def get(self, request, *args, **kwargs):
         token_cookie = request.COOKIES.get("auth_token")
@@ -257,44 +310,5 @@ class OperadorSesionActivaTokenAPIView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        operador = sesion_activa.id_operador
-        operador_dict = OperadorSerializer(operador).data
-
-        with connection.cursor() as cursor:
-            # ------------------------------ MÓDULOS ----------------------- #
-            cursor.execute(self.QUERY_MODULOS, [operador.id, operador.id_empresa_id])
-            mod_rows = cursor.fetchall()
-            modulos = [
-                {
-                    "nombre_menu": row[0],
-                    "id_modulo":   row[1],
-                    "icon":        row[2],
-                }
-                for row in mod_rows
-            ]
-
-            # --------------------------- FUNCIONALIDADES ------------------ #
-            cursor.execute(self.QUERY_FUNCIONALIDADES, [operador.id])
-            func_rows = cursor.fetchall()
-            funcionalidades = [
-                {
-                    "id":            row[0],
-                    "url":           row[1],
-                    "texto":         row[2],
-                    "etiqueta":      row[3],
-                    "descripcion":   row[4],
-                    "nivel_menu":    row[5],
-                    "orden":         row[6],
-                    "modificable":   row[7],
-                    "separador_up":  row[8],
-                    "id_modulo":     row[9],
-                }
-                for row in func_rows
-            ]
-
-        respuesta = {
-            "operador":        operador_dict,
-            "modulos":         modulos,
-            "funcionalidades": funcionalidades,
-        }
+        respuesta = build_payload(sesion_activa.id_operador)
         return Response(respuesta, status=status.HTTP_200_OK)
