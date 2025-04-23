@@ -44,12 +44,12 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',  # <-- Asegúrate de tenerlo instalado y aquí
     # Tus apps
-    'coreempresas',
-    'configuracion',
-    'operadores',
-    'tasks',
-    'logs',
-    'dm_logistica',
+    #'coreempresas',
+    #'configuracion',
+    #'operadores',
+    #'tasks',
+    #'logs',
+    #'dm_logistica',
     'dm_sistema',
 ]
 
