@@ -8,7 +8,7 @@ import requests
 from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
-from django.db import transaction
+from django.db import transaction                     # ← ya estaba usado en login
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -153,6 +153,15 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
         if not sesion_activa:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # ------------------------------------------------------------------ #
+        # Eliminamos todas las otras sesiones activas del mismo operador      #
+        # ------------------------------------------------------------------ #
+        with transaction.atomic():
+            (SesionesActivas.objects
+                .filter(id_operador=op)
+                .exclude(pk=sesion_activa.pk)
+                .delete())
 
         return Response(
             {
