@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'tasks',
     'logs',
     'dm_logistica',
+    'dm_sistema',
 ]
 
 MIDDLEWARE = [
