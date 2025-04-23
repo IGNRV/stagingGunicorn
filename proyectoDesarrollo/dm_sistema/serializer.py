@@ -1,12 +1,15 @@
-# dm_sistema/serializer.py
-
 from rest_framework import serializers
 from .models import (
-    Operador, OperadorBodega, OperadorEmpresaModulo, 
-    OperadorEmpresaModuloMenu, OperadorGrupo, OperadorPuntoVenta,
-    Sesion, SesionActiva
+    Operador,
+    OperadorBodega,
+    OperadorEmpresaModulo,
+    OperadorEmpresaModuloMenu,
+    OperadorGrupo,
+    OperadorPuntoVenta,
+    Sesion,
+    SesionActiva
 )
-from dm_logistica.models import Proveedor  # ← import para el nuevo serializer
+from dm_logistica.models import Proveedor
 
 class OperadorSerializer(serializers.ModelSerializer):
     class Meta:
@@ -48,9 +51,6 @@ class SesionActivaSerializer(serializers.ModelSerializer):
         model = SesionActiva
         fields = '__all__'
 
-# ─────────────────────────────────────────────────────────────────────────────
-# NUEVO: Serializer para Proveedor
-# ─────────────────────────────────────────────────────────────────────────────
 class ProveedorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Proveedor
