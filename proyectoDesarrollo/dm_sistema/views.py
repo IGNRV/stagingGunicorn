@@ -8,7 +8,7 @@ import requests
 from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
-from django.db import transaction, connection       # ← se añade `connection`
+from django.db import transaction, connection
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -110,7 +110,7 @@ class OperadorLoginAPIView(APIView):
         # ------------------------------------------------------------------ #
         enviar_correo_python(
             "DM",
-            op.username,                         # el username es el correo
+            op.username,
             "Código de Verificación",
             f"Hola, tu código es: {cod_verificacion}",
         )
@@ -122,14 +122,13 @@ class OperadorLoginAPIView(APIView):
             {"detail": "Credenciales válidas"},
             status=status.HTTP_200_OK,
         )
-        # Cookie solo con el token, sin código de verificación
         response.set_cookie(
             key="auth_token",
             value=jwt_token,
             httponly=True,
-            secure=True,      # ← asume HTTPS; cambia a False si no lo usas
+            secure=True,
             samesite="Lax",
-            max_age=60 * 60 * 24,  # 1 día (ajusta si es necesario)
+            max_age=60 * 60 * 24,
         )
         return response
 
@@ -174,7 +173,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
 
         # ------------------------------------------------------------------ #
-        # Eliminamos todas las otras sesiones activas del mismo operador      #
+        # Eliminamos todas las otras sesiones activas                        #
         # ------------------------------------------------------------------ #
         with transaction.atomic():
             (SesionesActivas.objects
@@ -192,18 +191,20 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR Y MÓDULOS POR TOKEN (COOKIE)                            #
+#  OBTENER OPERADOR, MÓDULOS Y FUNCIONALIDADES POR TOKEN                    #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
     GET /dm_sistema/operadores/sesiones-activas-token/
 
-    • El cliente debe enviar la cookie `auth_token`.
-    • Si coincide con una fila de dm_sistema.sesiones_activas se responde con:
-        - La fila completa de dm_sistema.operador
-        - Un arreglo `modulos` con los módulos habilitados.
+    Devuelve:
+    {
+        "operador": { ... },
+        "modulos":  [ ... ],
+        "funcionalidades": [ ... ]
+    }
     """
-    authentication_classes: list = []   # pública: validamos a mano
+    authentication_classes: list = []
     permission_classes:     list = []
 
     QUERY_MODULOS = """
@@ -220,6 +221,20 @@ class OperadorSesionActivaTokenAPIView(APIView):
            AND c.estado      = 1
            AND b.id_empresa  = %s
       ORDER BY c.orden
+    """
+
+    QUERY_FUNCIONALIDADES = """
+        SELECT m.id, m.url, m.texto, m.etiqueta, m.descripcion,
+               m.nivel_menu, m.orden, m.modificable, m.separador_up,
+               m.id_modulo
+          FROM dm_sistema.operador                        o
+    INNER JOIN dm_sistema.operador_empresa_modulos_menu oemm
+            ON o.id                   = oemm.id_operador
+    INNER JOIN dm_sistema.empresa_modulos_menu          emm
+            ON oemm.id_empresa_modulos_menu = emm.id_empresa_modulo
+    INNER JOIN dm_sistema.menus                        m
+            ON emm.id_menu              = m.id
+         WHERE o.id = %s
     """
 
     def get(self, request, *args, **kwargs):
@@ -245,27 +260,41 @@ class OperadorSesionActivaTokenAPIView(APIView):
         operador = sesion_activa.id_operador
         operador_dict = OperadorSerializer(operador).data
 
-        # ------------------------------------------------------------------ #
-        # Ejecutamos la query de módulos                                     #
-        # ------------------------------------------------------------------ #
         with connection.cursor() as cursor:
-            cursor.execute(
-                self.QUERY_MODULOS,
-                [operador.id, operador.id_empresa_id],
-            )
-            rows = cursor.fetchall()
+            # ------------------------------ MÓDULOS ----------------------- #
+            cursor.execute(self.QUERY_MODULOS, [operador.id, operador.id_empresa_id])
+            mod_rows = cursor.fetchall()
+            modulos = [
+                {
+                    "nombre_menu": row[0],
+                    "id_modulo":   row[1],
+                    "icon":        row[2],
+                }
+                for row in mod_rows
+            ]
 
-        modulos = [
-            {
-                "nombre_menu": row[0],
-                "id_modulo":   row[1],
-                "icon":        row[2],
-            }
-            for row in rows
-        ]
+            # --------------------------- FUNCIONALIDADES ------------------ #
+            cursor.execute(self.QUERY_FUNCIONALIDADES, [operador.id])
+            func_rows = cursor.fetchall()
+            funcionalidades = [
+                {
+                    "id":            row[0],
+                    "url":           row[1],
+                    "texto":         row[2],
+                    "etiqueta":      row[3],
+                    "descripcion":   row[4],
+                    "nivel_menu":    row[5],
+                    "orden":         row[6],
+                    "modificable":   row[7],
+                    "separador_up":  row[8],
+                    "id_modulo":     row[9],
+                }
+                for row in func_rows
+            ]
 
         respuesta = {
-            "operador": operador_dict,
-            "modulos":  modulos,
+            "operador":        operador_dict,
+            "modulos":         modulos,
+            "funcionalidades": funcionalidades,
         }
         return Response(respuesta, status=status.HTTP_200_OK)
