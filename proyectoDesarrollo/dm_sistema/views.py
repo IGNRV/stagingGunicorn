@@ -8,7 +8,7 @@ import requests
 from datetime import datetime, timezone as dt_timezone
 
 from django.conf import settings
-from django.db import transaction                     # ← ya estaba usado en login
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
@@ -64,6 +64,9 @@ class OperadorLoginAPIView(APIView):
         username = serializer.validated_data["username"]
         password = serializer.validated_data["password"]
 
+        # ------------------------------------------------------------------ #
+        # 1. Verificamos credenciales                                        #
+        # ------------------------------------------------------------------ #
         try:
             op = Operador.objects.get(username=username)
         except Operador.DoesNotExist:
@@ -72,6 +75,9 @@ class OperadorLoginAPIView(APIView):
         if crypt.crypt(password, op.password or "") != (op.password or ""):
             return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # ------------------------------------------------------------------ #
+        # 2. Credenciales correctas → registramos sesión + sesión activa     #
+        # ------------------------------------------------------------------ #
         client_ip = self._get_client_ip(request)
 
         token_payload = {
@@ -98,21 +104,33 @@ class OperadorLoginAPIView(APIView):
                 cod_verificacion=cod_verificacion,
             )
 
+        # ------------------------------------------------------------------ #
+        # 3. Enviamos el código de verificación al correo del usuario        #
+        # ------------------------------------------------------------------ #
         enviar_correo_python(
             "DM",
-            op.username,
+            op.username,                         # el username es el correo
             "Código de Verificación",
             f"Hola, tu código es: {cod_verificacion}",
         )
 
-        return Response(
-            {
-                "detail": "Credenciales válidas",
-                "token": jwt_token,
-                "cod_verificacion": cod_verificacion,
-            },
+        # ------------------------------------------------------------------ #
+        # 4. Respondemos al cliente + Cookie con el token                    #
+        # ------------------------------------------------------------------ #
+        response = Response(
+            {"detail": "Credenciales válidas"},
             status=status.HTTP_200_OK,
         )
+        # Cookie solo con el token, sin código de verificación
+        response.set_cookie(
+            key="auth_token",
+            value=jwt_token,
+            httponly=True,
+            secure=True,      # ← asume HTTPS; cambia a False si no lo usas
+            samesite="Lax",
+            max_age=60 * 60 * 24,  # 1 día (ajusta si es necesario)
+        )
+        return response
 
 
 # ------------------------------------------------------------------------- #
