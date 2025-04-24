@@ -411,8 +411,16 @@ class ProductoBodega(models.Model):
 
 
 class Proveedor(models.Model):
-    id_giro = models.ForeignKey(Giro, models.DO_NOTHING, db_column='id_giro')
+    # ------------------------------------------------------------------ #
+    #  CAMBIOS PRINCIPALES                                               #
+    # ------------------------------------------------------------------ #
+    # • id_giro (FK)        → **eliminado** (la relación ya no aplica)
+    # • giro (CharField)    → **nuevo campo** que almacena el código SII
+    #                          del giro como texto (p. ej. "7273824").
+    # ------------------------------------------------------------------ #
+    giro = models.CharField(max_length=10)                       # ← NEW
     descrip_giro = models.CharField(max_length=250, blank=True, null=True)
+
     id_empresa = models.IntegerField()
     rut = models.CharField(max_length=20)
     nombre_rs = models.CharField(max_length=200)

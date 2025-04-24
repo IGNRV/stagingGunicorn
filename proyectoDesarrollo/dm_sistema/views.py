@@ -14,9 +14,11 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+# ------------------------------------------------------------------ #
+# MODELOS Y SERIALIZERS                                              #
+# ------------------------------------------------------------------ #
 from dm_logistica.models import (
-    Proveedor,
-    Giro,
+    Proveedor,          # ← necesario para el endpoint «crear proveedor»
     Bodega,
     BodegaTipo,
 )
@@ -25,8 +27,7 @@ from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
     OperadorSerializer,
-    ProveedorSerializer,
-    GiroSerializer,
+    ProveedorSerializer,   # ← usado por ProveedorCreateAPIView
     BodegaSerializer,
     BodegaTipoSerializer,
 )
@@ -65,7 +66,7 @@ INNER JOIN dm_sistema.menus                        m
 """
 
 # ------------------------------------------------------------------------- #
-# Función auxiliar para enviar correos                                       #
+# Función auxiliar para enviar correos                                      #
 # ------------------------------------------------------------------------- #
 def enviar_correo_python(
     remitente: str,
@@ -89,8 +90,7 @@ def enviar_correo_python(
 
 
 # ------------------------------------------------------------------------- #
-#  HELPER → arma operador/modulos/funcionalidades/proveedores/giros/bodegas #
-#            bodega_tipos                                                   #
+#  HELPER → arma operador/modulos/funcionalidades/bodegas/bodega_tipos      #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
     """
@@ -98,8 +98,6 @@ def build_payload(operador: Operador) -> dict:
         • operador
         • modulos
         • funcionalidades
-        • proveedores
-        • giros
         • bodegas
         • bodega_tipos
     """
@@ -137,14 +135,6 @@ def build_payload(operador: Operador) -> dict:
             for row in func_rows
         ]
 
-    # --------------------------- PROVEEDORES ----------------------------- #
-    proveedores_qs   = Proveedor.objects.filter(id_empresa=operador.id_empresa_id)
-    proveedores_data = ProveedorSerializer(proveedores_qs, many=True).data
-
-    # ------------------------------ GIROS -------------------------------- #
-    giros_qs   = Giro.objects.filter(id_empresa=operador.id_empresa_id)
-    giros_data = GiroSerializer(giros_qs, many=True).data
-
     # ----------------------------- BODEGAS ------------------------------- #
     bodegas_qs   = Bodega.objects.filter(id_empresa=operador.id_empresa_id)
     bodegas_data = BodegaSerializer(bodegas_qs, many=True).data
@@ -157,15 +147,13 @@ def build_payload(operador: Operador) -> dict:
         "operador":        operador_dict,
         "modulos":         modulos,
         "funcionalidades": funcionalidades,
-        "proveedores":     proveedores_data,
-        "giros":           giros_data,
         "bodegas":         bodegas_data,
         "bodega_tipos":    bodega_tipos_data,
     }
 
 
 # ------------------------------------------------------------------------- #
-#  LOGIN / VALIDAR                                                           #
+#  LOGIN / VALIDAR                                                          #
 # ------------------------------------------------------------------------- #
 class OperadorLoginAPIView(APIView):
     authentication_classes: list = []
@@ -263,7 +251,7 @@ class OperadorLoginAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  VERIFICAR CÓDIGO                                                          #
+#  VERIFICAR CÓDIGO                                                         #
 # ------------------------------------------------------------------------- #
 class OperadorCodigoVerificacionAPIView(APIView):
     """
@@ -280,8 +268,6 @@ class OperadorCodigoVerificacionAPIView(APIView):
         "operador": { ... },
         "modulos":  [ ... ],
         "funcionalidades": [ ... ],
-        "proveedores": [ ... ],
-        "giros": [ ... ],
         "bodegas": [ ... ],
         "bodega_tipos": [ ... ]
     }
@@ -339,8 +325,8 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES, PROVEEDORES, GIROS, BODEGAS  #
-#  Y BODEGA_TIPOS POR TOKEN                                                 #
+#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES, BODEGAS Y BODEGA_TIPOS       #
+#  POR TOKEN                                                                #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
@@ -351,8 +337,6 @@ class OperadorSesionActivaTokenAPIView(APIView):
         "operador": { ... },
         "modulos":  [ ... ],
         "funcionalidades": [ ... ],
-        "proveedores": [ ... ],
-        "giros": [ ... ],
         "bodegas": [ ... ],
         "bodega_tipos": [ ... ]
     }
@@ -438,9 +422,26 @@ class ProveedorCreateAPIView(APIView):
     """
     POST /dm_sistema/logistica/proveedores/crear/
 
+    Body (ejemplo):
+    {
+      "giro": "7273824",
+      "descrip_giro": "Servicios informáticos",
+      "rut": "76.543.210-1",
+      "nombre_rs": "Soluciones Digitales SpA",
+      "nombre_fantasia": "SolDigital",
+      "web": "https://soldigital.cl",
+      "fecha_alta": "2025-04-24",
+      "modalidad_pago": "Crédito",
+      "plazo_pago": 45,
+      "estado": 1,
+      "direccion": "Calle Los Naranjos 1234",
+      "id_comuna": 13114,
+      "id_region": 13,
+      "proveedor_unico": 1
+    }
+
     • El cliente **debe** estar autenticado por cookie `auth_token`.
-    • El body JSON acepta todas las columnas **excepto** `id` e `id_empresa`;
-      `id_empresa` se fuerza al de la empresa del usuario autenticado
+    • `id_empresa` se fuerza al de la empresa del usuario autenticado
       ignorando cualquier valor que venga en el body.
     • Devuelve el registro creado.
     """

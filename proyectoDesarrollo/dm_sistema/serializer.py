@@ -4,81 +4,62 @@ from rest_framework import serializers
 from dm_sistema.models import Operador
 from dm_logistica.models import (
     Proveedor,
-    Giro,
     Bodega,
     BodegaTipo,
 )
 
-
+# ------------------------------------------------------------------------- #
+#  SERIALIZADORES PARA LOGIN / VERIFICACIÓN                                 #
+# ------------------------------------------------------------------------- #
 class OperadorLoginSerializer(serializers.Serializer):
-    """
-    Body:
-    {
-        "username": "",
-        "password": ""
-    }
-    """
     username = serializers.CharField(max_length=50, trim_whitespace=True)
     password = serializers.CharField(max_length=128, write_only=True)
 
 
 class OperadorVerificarSerializer(serializers.Serializer):
-    """
-    Body:
-    {
-        "username": "",
-        "cod_verificacion": ""
-    }
-    """
     username = serializers.CharField(max_length=50, trim_whitespace=True)
     cod_verificacion = serializers.CharField(max_length=255, trim_whitespace=True)
 
 
 class OperadorSerializer(serializers.ModelSerializer):
-    """
-    Serializa **todas** las columnas de dm_sistema.operador para
-    reenviarlas al cliente tal cual las entrega la BD.
-    """
     class Meta:
         model  = Operador
         fields = "__all__"
 
-
+# ------------------------------------------------------------------------- #
+#  SERIALIZADOR PROVEEDOR – SIN id_giro, CON giro (char)                    #
+# ------------------------------------------------------------------------- #
 class ProveedorSerializer(serializers.ModelSerializer):
-    """
-    Serializa **todas** las columnas de dm_logistica.proveedor para
-    reenviarlas al cliente tal cual las entrega la BD.
-    """
     class Meta:
         model  = Proveedor
-        fields = "__all__"
-
-
-class GiroSerializer(serializers.ModelSerializer):
-    """
-    Serializa **todas** las columnas de dm_logistica.giro para
-    reenviarlas al cliente tal cual las entrega la BD.
-    """
-    class Meta:
-        model  = Giro
-        fields = "__all__"
+        # definimos explícitamente para asegurar el orden y excluir campos
+        fields = [
+            "id",
+            "giro",
+            "descrip_giro",
+            "id_empresa",
+            "rut",
+            "nombre_rs",
+            "nombre_fantasia",
+            "web",
+            "fecha_alta",
+            "modalidad_pago",
+            "plazo_pago",
+            "estado",
+            "direccion",
+            "id_comuna",
+            "id_region",
+            "proveedor_unico",
+        ]
 
 
 class BodegaSerializer(serializers.ModelSerializer):
-    """
-    Serializa **todas** las columnas de dm_logistica.bodega para
-    reenviarlas al cliente tal cual las entrega la BD.
-    """
     class Meta:
         model  = Bodega
         fields = "__all__"
 
 
 class BodegaTipoSerializer(serializers.ModelSerializer):
-    """
-    Serializa **todas** las columnas de dm_logistica.bodega_tipo para
-    reenviarlas al cliente tal cual las entrega la BD.
-    """
     class Meta:
         model  = BodegaTipo
         fields = "__all__"
