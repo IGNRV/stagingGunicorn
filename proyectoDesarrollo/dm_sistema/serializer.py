@@ -2,7 +2,12 @@
 from rest_framework import serializers
 
 from dm_sistema.models import Operador
-from dm_logistica.models import Proveedor, Giro, Bodega
+from dm_logistica.models import (
+    Proveedor,
+    Giro,
+    Bodega,
+    BodegaTipo,
+)
 
 
 class OperadorLoginSerializer(serializers.Serializer):
@@ -66,4 +71,14 @@ class BodegaSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model  = Bodega
+        fields = "__all__"
+
+
+class BodegaTipoSerializer(serializers.ModelSerializer):
+    """
+    Serializa **todas** las columnas de dm_logistica.bodega_tipo para
+    reenviarlas al cliente tal cual las entrega la BD.
+    """
+    class Meta:
+        model  = BodegaTipo
         fields = "__all__"

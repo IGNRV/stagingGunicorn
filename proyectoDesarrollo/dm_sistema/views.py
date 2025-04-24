@@ -14,7 +14,12 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from dm_logistica.models import Proveedor, Giro, Bodega
+from dm_logistica.models import (
+    Proveedor,
+    Giro,
+    Bodega,
+    BodegaTipo,
+)
 from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
@@ -23,6 +28,7 @@ from .serializer import (
     ProveedorSerializer,
     GiroSerializer,
     BodegaSerializer,
+    BodegaTipoSerializer,
 )
 
 # ------------------------------------------------------------------------- #
@@ -84,6 +90,7 @@ def enviar_correo_python(
 
 # ------------------------------------------------------------------------- #
 #  HELPER → arma operador/modulos/funcionalidades/proveedores/giros/bodegas #
+#            bodega_tipos                                                   #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
     """
@@ -94,6 +101,7 @@ def build_payload(operador: Operador) -> dict:
         • proveedores
         • giros
         • bodegas
+        • bodega_tipos
     """
     operador_dict = OperadorSerializer(operador).data
 
@@ -141,6 +149,10 @@ def build_payload(operador: Operador) -> dict:
     bodegas_qs   = Bodega.objects.filter(id_empresa=operador.id_empresa_id)
     bodegas_data = BodegaSerializer(bodegas_qs, many=True).data
 
+    # -------------------------- BODEGA TIPOS ----------------------------- #
+    bodega_tipos_qs   = BodegaTipo.objects.all().order_by("id")
+    bodega_tipos_data = BodegaTipoSerializer(bodega_tipos_qs, many=True).data
+
     return {
         "operador":        operador_dict,
         "modulos":         modulos,
@@ -148,6 +160,7 @@ def build_payload(operador: Operador) -> dict:
         "proveedores":     proveedores_data,
         "giros":           giros_data,
         "bodegas":         bodegas_data,
+        "bodega_tipos":    bodega_tipos_data,
     }
 
 
@@ -269,7 +282,8 @@ class OperadorCodigoVerificacionAPIView(APIView):
         "funcionalidades": [ ... ],
         "proveedores": [ ... ],
         "giros": [ ... ],
-        "bodegas": [ ... ]
+        "bodegas": [ ... ],
+        "bodega_tipos": [ ... ]
     }
     """
     authentication_classes: list = []
@@ -325,7 +339,8 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES, PROVEEDORES, GIROS Y BODEGAS #
+#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES, PROVEEDORES, GIROS, BODEGAS  #
+#  Y BODEGA_TIPOS POR TOKEN                                                 #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
@@ -338,7 +353,8 @@ class OperadorSesionActivaTokenAPIView(APIView):
         "funcionalidades": [ ... ],
         "proveedores": [ ... ],
         "giros": [ ... ],
-        "bodegas": [ ... ]
+        "bodegas": [ ... ],
+        "bodega_tipos": [ ... ]
     }
     """
     authentication_classes: list = []
