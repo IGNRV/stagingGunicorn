@@ -1,6 +1,8 @@
 # ./dm_sistema/serializer.py
 from rest_framework import serializers
-from .models import Operador
+
+from dm_sistema.models import Operador
+from dm_logistica.models import Proveedor
 
 
 class OperadorLoginSerializer(serializers.Serializer):
@@ -34,5 +36,14 @@ class OperadorSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model  = Operador
-        # `fields="__all__"` incluye cada columna del modelo autogenerado
+        fields = "__all__"
+
+
+class ProveedorSerializer(serializers.ModelSerializer):
+    """
+    Serializa **todas** las columnas de dm_logistica.proveedor para
+    reenviarlas al cliente tal cual las entrega la BD.
+    """
+    class Meta:
+        model  = Proveedor
         fields = "__all__"

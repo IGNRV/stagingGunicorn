@@ -230,10 +230,16 @@ exec gunicorn $DJANGO_WSGI_MODULE \
   --log-file=-
 
 
+=== ./dm_logistica/serializer.py ===
+
+
 === ./dm_logistica/admin.py ===
 from django.contrib import admin
 
 # Register your models here.
+
+
+=== ./dm_logistica/urls.py ===
 
 
 === ./dm_logistica/__init__.py ===
@@ -843,7 +849,9 @@ class DmLogisticaConfig(AppConfig):
 === ./dm_sistema/serializer.py ===
 # ./dm_sistema/serializer.py
 from rest_framework import serializers
-from .models import Operador
+
+from dm_sistema.models import Operador
+from dm_logistica.models import Proveedor
 
 
 class OperadorLoginSerializer(serializers.Serializer):
@@ -877,7 +885,16 @@ class OperadorSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model  = Operador
-        # `fields="__all__"` incluye cada columna del modelo autogenerado
+        fields = "__all__"
+
+
+class ProveedorSerializer(serializers.ModelSerializer):
+    """
+    Serializa **todas** las columnas de dm_logistica.proveedor para
+    reenviarlas al cliente tal cual las entrega la BD.
+    """
+    class Meta:
+        model  = Proveedor
         fields = "__all__"
 
 
@@ -937,11 +954,14 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from dm_logistica.models import Proveedor
+from dm_logistica.models import Proveedor                           # ← nuevo import
 from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
     OperadorSerializer,
+    ProveedorSerializer,                                            # ← nuevo import
 )
 
 # ------------------------------------------------------------------------- #
@@ -1002,7 +1022,7 @@ def enviar_correo_python(
 
 
 # ------------------------------------------------------------------------- #
-#  HELPER → arma operador/modulos/funcionalidades                            #
+#  HELPER → arma operador/modulos/funcionalidades/proveedores               #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
     """
@@ -1010,6 +1030,7 @@ def build_payload(operador: Operador) -> dict:
         • operador
         • modulos
         • funcionalidades
+        • proveedores
     """
     operador_dict = OperadorSerializer(operador).data
 
@@ -1045,10 +1066,15 @@ def build_payload(operador: Operador) -> dict:
             for row in func_rows
         ]
 
+    # --------------------------- PROVEEDORES ----------------------------- #
+    proveedores_qs   = Proveedor.objects.filter(id_empresa=operador.id_empresa_id)
+    proveedores_data = ProveedorSerializer(proveedores_qs, many=True).data
+
     return {
         "operador":        operador_dict,
         "modulos":         modulos,
         "funcionalidades": funcionalidades,
+        "proveedores":     proveedores_data,
     }
 
 
@@ -1076,12 +1102,22 @@ class OperadorLoginAPIView(APIView):
         # 1. Verificamos credenciales                                        #
         # ------------------------------------------------------------------ #
         try:
-            op = Operador.objects.get(username=username)
+            op = Operador.objects.select_related("id_empresa").get(username=username)
         except Operador.DoesNotExist:
             return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
 
         if crypt.crypt(password, op.password or "") != (op.password or ""):
             return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # ------------------------------------------------------------------ #
+        # 1.1  Empresa activa? (estado = 1)                                  #
+        # ------------------------------------------------------------------ #
+        empresa = op.id_empresa                         # FK → dm_sistema.empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         # ------------------------------------------------------------------ #
         # 2. Credenciales correctas → registramos sesión + sesión activa     #
@@ -1101,10 +1137,10 @@ class OperadorLoginAPIView(APIView):
                 ip=client_ip,
                 fecha=timezone.now(),
                 id_operador=op,
-                id_empresa=op.id_empresa,
+                id_empresa=empresa,
             )
             SesionesActivas.objects.create(
-                id_empresa=op.id_empresa,
+                id_empresa=empresa,
                 id_operador=op,
                 id_sesion=sesion,
                 fecha_registro=timezone.now(),
@@ -1133,9 +1169,9 @@ class OperadorLoginAPIView(APIView):
             key="auth_token",
             value=jwt_token,
             httponly=True,
-            secure=True,
+            secure=True,        # Ajusta a False si no usas HTTPS
             samesite="Lax",
-            max_age=60 * 60 * 24,
+            max_age=60 * 60 * 24,   # 1 día
         )
         return response
 
@@ -1165,9 +1201,18 @@ class OperadorCodigoVerificacionAPIView(APIView):
         codigo   = serializer.validated_data["cod_verificacion"]
 
         try:
-            op = Operador.objects.get(username=username)
+            op = Operador.objects.select_related("id_empresa").get(username=username)
         except Operador.DoesNotExist:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # ------------------------------------------------------------------ #
+        # 0. Empresa activa?                                                 #
+        # ------------------------------------------------------------------ #
+        if not op.id_empresa or op.id_empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         sesion_activa = (
             SesionesActivas.objects
@@ -1189,7 +1234,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
                 .delete())
 
         # ------------------------------------------------------------------ #
-        # Construimos la respuesta (sin token)                               #
+        # Construimos la respuesta                                           #
         # ------------------------------------------------------------------ #
         payload = build_payload(op)
 
@@ -1197,7 +1242,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR, MÓDULOS Y FUNCIONALIDADES POR TOKEN                    #
+#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES Y PROVEEDORES POR TOKEN       #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
@@ -1207,7 +1252,8 @@ class OperadorSesionActivaTokenAPIView(APIView):
     {
         "operador": { ... },
         "modulos":  [ ... ],
-        "funcionalidades": [ ... ]
+        "funcionalidades": [ ... ],
+        "proveedores": [ ... ]
     }
     """
     authentication_classes: list = []
@@ -1223,7 +1269,7 @@ class OperadorSesionActivaTokenAPIView(APIView):
 
         sesion_activa = (
             SesionesActivas.objects
-            .select_related("id_operador")
+            .select_related("id_operador", "id_operador__id_empresa")
             .filter(token=token_cookie)
             .first()
         )
@@ -1231,6 +1277,15 @@ class OperadorSesionActivaTokenAPIView(APIView):
             return Response(
                 {"detail": "Token inválido o sesión expirada"},
                 status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # ------------------------------------------------------------------ #
+        # Empresa sigue activa?                                              #
+        # ------------------------------------------------------------------ #
+        if not sesion_activa.id_operador.id_empresa or sesion_activa.id_operador.id_empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         respuesta = build_payload(sesion_activa.id_operador)
@@ -1258,15 +1313,12 @@ class OperadorLogoutAPIView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        deleted, _ = SesionesActivas.objects.filter(token=token_cookie).delete()
+        SesionesActivas.objects.filter(token=token_cookie).delete()
 
-        # Siempre devolvemos 200 para no revelar si el token ya había sido
-        # invalidado; basta con “ok” si se recibió la petición.
         response = Response(
             {"detail": "Sesión cerrada correctamente"},
             status=status.HTTP_200_OK,
         )
-        # Quitamos la cookie del navegador
         response.set_cookie(
             key="auth_token",
             value="",
@@ -1759,208 +1811,3 @@ REST_FRAMEWORK = {
     ),
 }
 
-
-
-=== ./proyectoDesarrollo/combined.txt ===
-
-
-=== ./urls.py ===
-# ./proyectoDesarrollo/urls.py
-
-from django.contrib import admin
-from django.urls import path, include
-
-urlpatterns = [
-    path('admin/', admin.site.urls),
-    # Se incluye la app "operadores" (ya existente)
-    path('operadores/', include('operadores.urls')),
-    # Se incluye la app "coreempresas" con el prefijo "coreempresas/"
-    path('coreempresas/', include('coreempresas.urls')),
-    # Se incluyen las demás apps
-    path('configuracion/', include('configuracion.urls')),
-    path('tasks/', include('tasks.urls')),
-]
-
-
-=== ./__init__.py ===
-
-
-=== ./asgi.py ===
-"""
-ASGI config for proyectoDesarrollo project.
-
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/5.1/howto/deployment/asgi/
-"""
-
-import os
-
-from django.core.asgi import get_asgi_application
-
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'proyectoDesarrollo.settings')
-
-application = get_asgi_application()
-
-
-=== ./wsgi.py ===
-"""
-WSGI config for proyectoDesarrollo project.
-
-It exposes the WSGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/5.1/howto/deployment/wsgi/
-"""
-
-import os
-
-from django.core.wsgi import get_wsgi_application
-
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'proyectoDesarrollo.settings')
-
-application = get_wsgi_application()
-
-
-=== ./settings.py ===
-"""
-Django settings for proyectoDesarrollo project.
-
-Generated by 'django-admin startproject' using Django 5.1.7.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/5.1/topics/settings/
-
-For the full list of settings and their values, see
-https://docs.djangoproject.com/en/5.1/ref/settings/
-"""
-
-from pathlib import Path
-import os  # <-- ¡Importante agregar esta línea!
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-5bluxl5na1#wnt1576=xcs&#55w!p6l4#_-m1sjyfku2fa00v='
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False  # Ponlo False en producción
-
-ALLOWED_HOSTS = [
-    'localhost',
-    '127.0.0.1',
-    '35.222.2.211',
-    'desarrollo.smartgest.cl'
-        # Ajusta con tu IP o dominio
-]
-
-INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    # Terceros
-    'rest_framework',
-    'corsheaders',  # <-- Asegúrate de tenerlo instalado y aquí
-    # Tus apps
-    #'coreempresas',
-    #'configuracion',
-    #'operadores',
-    #'tasks',
-    #'logs',
-    'dm_logistica',
-    'dm_sistema',
-    'dm_requerimientos',
-]
-
-MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # <-- Importante que vaya antes de CommonMiddleware
-    'django.middleware.common.CommonMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
-]
-
-ROOT_URLCONF = 'proyectoDesarrollo.urls'
-
-TEMPLATES = [
-    {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-            ],
-        },
-    },
-]
-
-WSGI_APPLICATION = 'proyectoDesarrollo.wsgi.application'
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'mi_basedatos',      
-        'USER': 'mi_usuario',        
-        'PASSWORD': 'mi_password',   
-        'HOST': 'localhost',         
-        'PORT': '5432',              
-    }
-}
-
-LANGUAGE_CODE = 'es-cl'
-TIME_ZONE = 'America/Santiago'
-USE_I18N = True
-USE_L10N = True
-USE_TZ = True
-
-# Static files (CSS, JavaScript, Images)
-STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-# ============================================
-# CORS CONFIGURATION PARA INCLUIR CREDENCIALES
-# ============================================
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',      
-    'http://35.222.2.211:8000',
-    'http://0.0.0.0:5173',    
-    'http://0.0.0.0:8000',    
-]
-CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:5173',
-    'http://35.222.2.211:8000',
-    'http://0.0.0.0:5173',
-    'http://0.0.0.0:8000',
-]
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
-        # etc...
-    ),
-    'DEFAULT_PERMISSION_CLASSES': (
-        'rest_framework.permissions.AllowAny',
-    ),
-}
-
-
-
-=== ./combined.txt ===

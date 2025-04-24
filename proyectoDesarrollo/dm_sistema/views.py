@@ -14,11 +14,14 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Operador, Sesiones, SesionesActivas        # ← los modelos ya importados
+from dm_logistica.models import Proveedor
+from dm_logistica.models import Proveedor                           # ← nuevo import
+from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
     OperadorSerializer,
+    ProveedorSerializer,                                            # ← nuevo import
 )
 
 # ------------------------------------------------------------------------- #
@@ -79,7 +82,7 @@ def enviar_correo_python(
 
 
 # ------------------------------------------------------------------------- #
-#  HELPER → arma operador/modulos/funcionalidades                            #
+#  HELPER → arma operador/modulos/funcionalidades/proveedores               #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
     """
@@ -87,6 +90,7 @@ def build_payload(operador: Operador) -> dict:
         • operador
         • modulos
         • funcionalidades
+        • proveedores
     """
     operador_dict = OperadorSerializer(operador).data
 
@@ -122,10 +126,15 @@ def build_payload(operador: Operador) -> dict:
             for row in func_rows
         ]
 
+    # --------------------------- PROVEEDORES ----------------------------- #
+    proveedores_qs   = Proveedor.objects.filter(id_empresa=operador.id_empresa_id)
+    proveedores_data = ProveedorSerializer(proveedores_qs, many=True).data
+
     return {
         "operador":        operador_dict,
         "modulos":         modulos,
         "funcionalidades": funcionalidades,
+        "proveedores":     proveedores_data,
     }
 
 
@@ -285,7 +294,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
                 .delete())
 
         # ------------------------------------------------------------------ #
-        # Construimos la respuesta (sin token)                               #
+        # Construimos la respuesta                                           #
         # ------------------------------------------------------------------ #
         payload = build_payload(op)
 
@@ -293,7 +302,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR, MÓDULOS Y FUNCIONALIDADES POR TOKEN                    #
+#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES Y PROVEEDORES POR TOKEN       #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
@@ -303,7 +312,8 @@ class OperadorSesionActivaTokenAPIView(APIView):
     {
         "operador": { ... },
         "modulos":  [ ... ],
-        "funcionalidades": [ ... ]
+        "funcionalidades": [ ... ],
+        "proveedores": [ ... ]
     }
     """
     authentication_classes: list = []
