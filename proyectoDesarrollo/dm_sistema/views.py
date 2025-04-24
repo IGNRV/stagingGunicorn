@@ -14,7 +14,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Operador, Sesiones, SesionesActivas
+from .models import Operador, Sesiones, SesionesActivas        # ← los modelos ya importados
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
@@ -153,12 +153,22 @@ class OperadorLoginAPIView(APIView):
         # 1. Verificamos credenciales                                        #
         # ------------------------------------------------------------------ #
         try:
-            op = Operador.objects.get(username=username)
+            op = Operador.objects.select_related("id_empresa").get(username=username)
         except Operador.DoesNotExist:
             return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
 
         if crypt.crypt(password, op.password or "") != (op.password or ""):
             return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # ------------------------------------------------------------------ #
+        # 1.1  Empresa activa? (estado = 1)                                  #
+        # ------------------------------------------------------------------ #
+        empresa = op.id_empresa                         # FK → dm_sistema.empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         # ------------------------------------------------------------------ #
         # 2. Credenciales correctas → registramos sesión + sesión activa     #
@@ -178,10 +188,10 @@ class OperadorLoginAPIView(APIView):
                 ip=client_ip,
                 fecha=timezone.now(),
                 id_operador=op,
-                id_empresa=op.id_empresa,
+                id_empresa=empresa,
             )
             SesionesActivas.objects.create(
-                id_empresa=op.id_empresa,
+                id_empresa=empresa,
                 id_operador=op,
                 id_sesion=sesion,
                 fecha_registro=timezone.now(),
@@ -210,9 +220,9 @@ class OperadorLoginAPIView(APIView):
             key="auth_token",
             value=jwt_token,
             httponly=True,
-            secure=True,
+            secure=True,        # Ajusta a False si no usas HTTPS
             samesite="Lax",
-            max_age=60 * 60 * 24,
+            max_age=60 * 60 * 24,   # 1 día
         )
         return response
 
@@ -242,9 +252,18 @@ class OperadorCodigoVerificacionAPIView(APIView):
         codigo   = serializer.validated_data["cod_verificacion"]
 
         try:
-            op = Operador.objects.get(username=username)
+            op = Operador.objects.select_related("id_empresa").get(username=username)
         except Operador.DoesNotExist:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # ------------------------------------------------------------------ #
+        # 0. Empresa activa?                                                 #
+        # ------------------------------------------------------------------ #
+        if not op.id_empresa or op.id_empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         sesion_activa = (
             SesionesActivas.objects
@@ -300,7 +319,7 @@ class OperadorSesionActivaTokenAPIView(APIView):
 
         sesion_activa = (
             SesionesActivas.objects
-            .select_related("id_operador")
+            .select_related("id_operador", "id_operador__id_empresa")
             .filter(token=token_cookie)
             .first()
         )
@@ -308,6 +327,15 @@ class OperadorSesionActivaTokenAPIView(APIView):
             return Response(
                 {"detail": "Token inválido o sesión expirada"},
                 status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # ------------------------------------------------------------------ #
+        # Empresa sigue activa?                                              #
+        # ------------------------------------------------------------------ #
+        if not sesion_activa.id_operador.id_empresa or sesion_activa.id_operador.id_empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         respuesta = build_payload(sesion_activa.id_operador)
@@ -335,15 +363,12 @@ class OperadorLogoutAPIView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        deleted, _ = SesionesActivas.objects.filter(token=token_cookie).delete()
+        SesionesActivas.objects.filter(token=token_cookie).delete()
 
-        # Siempre devolvemos 200 para no revelar si el token ya había sido
-        # invalidado; basta con “ok” si se recibió la petición.
         response = Response(
             {"detail": "Sesión cerrada correctamente"},
             status=status.HTTP_200_OK,
         )
-        # Quitamos la cookie del navegador
         response.set_cookie(
             key="auth_token",
             value="",

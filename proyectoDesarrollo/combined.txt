@@ -894,16 +894,22 @@ from django.urls import path
 from .views import (
     OperadorLoginAPIView,
     OperadorCodigoVerificacionAPIView,
-    OperadorSesionActivaTokenAPIView,      # ← nuevo import
+    OperadorSesionActivaTokenAPIView,
+    OperadorLogoutAPIView,                     # ← nuevo import
 )
 
 urlpatterns = [
-    path("operadores/validar/",   OperadorLoginAPIView.as_view(),             name="operador-login"),
-    path("operadores/verificar/", OperadorCodigoVerificacionAPIView.as_view(), name="operador-verificar"),
+    path("operadores/validar/",   OperadorLoginAPIView.as_view(),               name="operador-login"),
+    path("operadores/verificar/", OperadorCodigoVerificacionAPIView.as_view(),  name="operador-verificar"),
     path(
         "operadores/sesiones-activas-token/",
         OperadorSesionActivaTokenAPIView.as_view(),
         name="operador-sesion-por-token",
+    ),
+    path(                                 # ← nueva ruta
+        "operadores/logout/",
+        OperadorLogoutAPIView.as_view(),
+        name="operador-logout",
     ),
 ]
 
@@ -1229,6 +1235,47 @@ class OperadorSesionActivaTokenAPIView(APIView):
 
         respuesta = build_payload(sesion_activa.id_operador)
         return Response(respuesta, status=status.HTTP_200_OK)
+
+
+# ------------------------------------------------------------------------- #
+#  LOGOUT – elimina la sesión activa referida por la cookie                 #
+# ------------------------------------------------------------------------- #
+class OperadorLogoutAPIView(APIView):
+    """
+    GET /dm_sistema/operadores/logout/
+
+    • El cliente debe enviar la cookie `auth_token`.
+    • Se elimina la fila correspondiente en dm_sistema.sesiones_activas.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        deleted, _ = SesionesActivas.objects.filter(token=token_cookie).delete()
+
+        # Siempre devolvemos 200 para no revelar si el token ya había sido
+        # invalidado; basta con “ok” si se recibió la petición.
+        response = Response(
+            {"detail": "Sesión cerrada correctamente"},
+            status=status.HTTP_200_OK,
+        )
+        # Quitamos la cookie del navegador
+        response.set_cookie(
+            key="auth_token",
+            value="",
+            max_age=0,
+            httponly=True,
+            secure=True,
+            samesite="Lax",
+        )
+        return response
 
 
 === ./dm_sistema/models.py ===
