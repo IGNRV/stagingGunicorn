@@ -231,6 +231,64 @@ exec gunicorn $DJANGO_WSGI_MODULE \
 
 
 === ./dm_logistica/serializer.py ===
+# ./dm_logistica/serializer.py
+from datetime import datetime
+
+from rest_framework import serializers
+
+from dm_logistica.models import Proveedor
+
+
+class ProveedorCreateSerializer(serializers.Serializer):
+    """
+    Body esperado (ahora incluye `id_giro` y ya no crea un giro nuevo):
+
+    {
+      "rut":              "12.345.678-9",
+      "nombre_rs":        "Razón Social Ltda.",
+      "nombre_fantasia":  "Nombre Comercial",
+      "web":              "https://ejemplo.cl",
+      "modalidad_pago":   "Transferencia",
+      "plazo_pago":       30,
+      "direccion":        "Av. Siempre Viva 742",
+      "id_comuna":        13101,
+      "id_region":        13,
+      "proveedor_unico":  0,
+
+      "id_giro":          7,
+      "descrip_giro":     "Servicios informáticos"
+    }
+    """
+    # -------- Proveedor (campos obligatorios / opcionales) --------------- #
+    rut             = serializers.CharField(max_length=20)
+    nombre_rs       = serializers.CharField(max_length=200)
+    nombre_fantasia = serializers.CharField(max_length=200, allow_blank=True, required=False)
+    web             = serializers.CharField(max_length=50,  allow_blank=True, required=False)
+    modalidad_pago  = serializers.CharField(max_length=50,  allow_blank=True, required=False)
+    plazo_pago      = serializers.IntegerField(required=False, allow_null=True)
+    direccion       = serializers.CharField(max_length=255, allow_blank=True, required=False)
+    id_comuna       = serializers.IntegerField(required=False, allow_null=True)
+    id_region       = serializers.IntegerField(required=False, allow_null=True)
+    proveedor_unico = serializers.IntegerField(required=False, allow_null=True)
+
+    # -------- Giro (no se crea; FK debe existir) ------------------------- #
+    id_giro      = serializers.IntegerField()
+    descrip_giro = serializers.CharField(max_length=250, allow_blank=True, required=False)
+
+    def create(self, validated_data):
+        """
+        Inserta **solo** en dm_logistica.proveedor.
+        No se crean ni modifican filas en dm_logistica.giro.
+        """
+        id_empresa = validated_data.pop("id_empresa")  # inyectado desde la view
+
+        proveedor = Proveedor.objects.create(
+            id_empresa  = id_empresa,
+            fecha_alta  = datetime.now(),
+            estado      = 1,
+            **validated_data,
+        )
+        return proveedor
 
 
 === ./dm_logistica/admin.py ===
@@ -240,18 +298,85 @@ from django.contrib import admin
 
 
 === ./dm_logistica/urls.py ===
+# ./dm_logistica/urls.py
+from django.urls import path
+
+from dm_logistica.views import ProveedorCreateAPIView
+
+urlpatterns = [
+    path("proveedores/", ProveedorCreateAPIView.as_view(), name="proveedor-create"),
+]
 
 
 === ./dm_logistica/__init__.py ===
+# ./dm_logistica/__init__.py
+default_app_config = "dm_logistica.apps.DmLogisticaConfig"
 
 
 === ./dm_logistica/migrations/__init__.py ===
 
 
 === ./dm_logistica/views.py ===
-from django.shortcuts import render
+# ./dm_logistica/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
 
-# Create your views here.
+from dm_logistica.serializer import ProveedorCreateSerializer
+from dm_sistema.serializer   import ProveedorSerializer
+from dm_sistema.models       import SesionesActivas
+
+
+class ProveedorCreateAPIView(APIView):
+    """
+    POST /dm_logistica/proveedores/
+
+    ↳ Requiere la cookie `auth_token` de una sesión válida.
+    ↳ Cuerpo JSON → véase `ProveedorCreateSerializer`.
+
+    Devuelve el proveedor recién creado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # --------------------------- Sesión -------------------------------- #
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion = (
+            SesionesActivas.objects
+            .select_related("id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if (
+            not sesion
+            or not sesion.id_empresa
+            or sesion.id_empresa.estado != 1
+        ):
+            return Response(
+                {"detail": "Token inválido o empresa inactiva"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # --------------------------- Datos --------------------------------- #
+        data = request.data.copy()
+        data["id_empresa"] = sesion.id_empresa.id  # inyectamos empresa
+
+        serializer = ProveedorCreateSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        proveedor = serializer.save()
+        return Response(
+            ProveedorSerializer(proveedor).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 === ./dm_logistica/models.py ===
@@ -851,7 +976,7 @@ class DmLogisticaConfig(AppConfig):
 from rest_framework import serializers
 
 from dm_sistema.models import Operador
-from dm_logistica.models import Proveedor
+from dm_logistica.models import Proveedor, Giro
 
 
 class OperadorLoginSerializer(serializers.Serializer):
@@ -895,6 +1020,16 @@ class ProveedorSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model  = Proveedor
+        fields = "__all__"
+
+
+class GiroSerializer(serializers.ModelSerializer):
+    """
+    Serializa **todas** las columnas de dm_logistica.giro para
+    reenviarlas al cliente tal cual las entrega la BD.
+    """
+    class Meta:
+        model  = Giro
         fields = "__all__"
 
 
@@ -954,14 +1089,14 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from dm_logistica.models import Proveedor
-from dm_logistica.models import Proveedor                           # ← nuevo import
+from dm_logistica.models import Proveedor, Giro
 from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
     OperadorSerializer,
-    ProveedorSerializer,                                            # ← nuevo import
+    ProveedorSerializer,
+    GiroSerializer,
 )
 
 # ------------------------------------------------------------------------- #
@@ -1022,7 +1157,7 @@ def enviar_correo_python(
 
 
 # ------------------------------------------------------------------------- #
-#  HELPER → arma operador/modulos/funcionalidades/proveedores               #
+#  HELPER → arma operador/modulos/funcionalidades/proveedores/giros         #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
     """
@@ -1031,6 +1166,7 @@ def build_payload(operador: Operador) -> dict:
         • modulos
         • funcionalidades
         • proveedores
+        • giros
     """
     operador_dict = OperadorSerializer(operador).data
 
@@ -1070,11 +1206,16 @@ def build_payload(operador: Operador) -> dict:
     proveedores_qs   = Proveedor.objects.filter(id_empresa=operador.id_empresa_id)
     proveedores_data = ProveedorSerializer(proveedores_qs, many=True).data
 
+    # ------------------------------ GIROS -------------------------------- #
+    giros_qs   = Giro.objects.filter(id_empresa=operador.id_empresa_id)
+    giros_data = GiroSerializer(giros_qs, many=True).data
+
     return {
         "operador":        operador_dict,
         "modulos":         modulos,
         "funcionalidades": funcionalidades,
         "proveedores":     proveedores_data,
+        "giros":           giros_data,
     }
 
 
@@ -1242,7 +1383,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES Y PROVEEDORES POR TOKEN       #
+#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES, PROVEEDORES Y GIROS POR TOKEN#
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
@@ -1253,7 +1394,8 @@ class OperadorSesionActivaTokenAPIView(APIView):
         "operador": { ... },
         "modulos":  [ ... ],
         "funcionalidades": [ ... ],
-        "proveedores": [ ... ]
+        "proveedores": [ ... ],
+        "giros": [ ... ]
     }
     """
     authentication_classes: list = []
@@ -1621,14 +1763,19 @@ CREATE TABLE "django_session" ("session_key" varchar(40) NOT NULL PRIMARY KEY, "
 === ./proyectoDesarrollo/urls.py ===
 # ./proyectoDesarrollo/urls.py
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include   # ← IMPORTANTE: importamos include
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    # ------------------------------------------------------------------ #
+    #  Django Admin                                                      #
+    # ------------------------------------------------------------------ #
+    path("admin/", admin.site.urls),
 
-    # ▸ Rutas de la nueva lógica bajo dm_sistema
-    path('dm_sistema/', include('dm_sistema.urls')),
-
+    # ------------------------------------------------------------------ #
+    #  Módulos de la aplicación                                          #
+    # ------------------------------------------------------------------ #
+    path("dm_sistema/",   include("dm_sistema.urls")),    # endpoints de sistema
+    path("dm_logistica/", include("dm_logistica.urls")),  # endpoints de logística
 ]
 
 

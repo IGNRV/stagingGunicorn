@@ -395,3 +395,77 @@ class OperadorLogoutAPIView(APIView):
             samesite="Lax",
         )
         return response
+
+
+# ------------------------------------------------------------------------- #
+#  CREAR PROVEEDOR                                                          #
+# ------------------------------------------------------------------------- #
+class ProveedorCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/proveedores/crear/
+
+    • El cliente **debe** estar autenticado por cookie `auth_token`.
+    • El body JSON acepta todas las columnas **excepto** `id` e `id_empresa`;
+      `id_empresa` se fuerza al de la empresa del usuario autenticado
+      ignorando cualquier valor que venga en el body.
+    • Devuelve el registro creado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ------------------------------------------------------------------ #
+        # 1. Autenticación vía cookie                                        #
+        # ------------------------------------------------------------------ #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        operador = sesion_activa.id_operador
+        empresa  = operador.id_empresa
+
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------------------------------------------------------ #
+        # 2. Preparamos los datos                                            #
+        # ------------------------------------------------------------------ #
+        data = dict(request.data)             # trabajamos con copia mutable
+        data.pop("id_empresa", None)          # forzamos empresa correcta
+        data["id_empresa"] = empresa.id
+
+        # Aseguramos que fecha_alta esté en formato ISO-8601
+        data.setdefault("fecha_alta", datetime.now().date())
+
+        # ------------------------------------------------------------------ #
+        # 3. Serializamos y guardamos                                        #
+        # ------------------------------------------------------------------ #
+        serializer = ProveedorSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            proveedor = serializer.save()
+
+        return Response(
+            ProveedorSerializer(proveedor).data,
+            status=status.HTTP_201_CREATED,
+        )

@@ -7,5 +7,6 @@ urlpatterns = [
 
     # ▸ Rutas de la nueva lógica bajo dm_sistema
     path('dm_sistema/', include('dm_sistema.urls')),
+    
 
 ]

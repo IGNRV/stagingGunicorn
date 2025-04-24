@@ -5,7 +5,8 @@ from .views import (
     OperadorLoginAPIView,
     OperadorCodigoVerificacionAPIView,
     OperadorSesionActivaTokenAPIView,
-    OperadorLogoutAPIView,                     # ← nuevo import
+    OperadorLogoutAPIView,
+    ProveedorCreateAPIView,                           # ← NUEVO ENDPOINT
 )
 
 urlpatterns = [
@@ -16,9 +17,14 @@ urlpatterns = [
         OperadorSesionActivaTokenAPIView.as_view(),
         name="operador-sesion-por-token",
     ),
-    path(                                 # ← nueva ruta
+    path(
         "operadores/logout/",
         OperadorLogoutAPIView.as_view(),
         name="operador-logout",
+    ),
+    path(                                            # ← RUTA PARA INSERTAR PROVEEDOR
+        "logistica/proveedores/crear/",
+        ProveedorCreateAPIView.as_view(),
+        name="proveedor-crear",
     ),
 ]
