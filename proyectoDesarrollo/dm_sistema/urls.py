@@ -6,8 +6,10 @@ from .views import (
     OperadorCodigoVerificacionAPIView,
     OperadorSesionActivaTokenAPIView,
     OperadorLogoutAPIView,
-    ProveedorCreateAPIView,        # ← crear proveedor
-    ProveedorListAPIView,          # ← **NUEVO** listar proveedores
+    ProveedorCreateAPIView,
+    ProveedorListAPIView,
+    ProveedorDetailAPIView,   # ← nuevo
+    BodegaListAPIView,        # ← ya existente
 )
 
 urlpatterns = [
@@ -18,13 +20,10 @@ urlpatterns = [
         OperadorSesionActivaTokenAPIView.as_view(),
         name="operador-sesion-por-token",
     ),
-    path(
-        "operadores/logout/",
-        OperadorLogoutAPIView.as_view(),
-        name="operador-logout",
-    ),
+    path("operadores/logout/", OperadorLogoutAPIView.as_view(), name="operador-logout"),
+
     # ------------------------------------------------------------------ #
-    #  ENDPOINTS LOGÍSTICA – PROVEEDOR                                   #
+    #  ENDPOINTS LOGÍSTICA                                               #
     # ------------------------------------------------------------------ #
     path(
         "logistica/proveedores/crear/",
@@ -33,7 +32,17 @@ urlpatterns = [
     ),
     path(
         "logistica/proveedores/",
-        ProveedorListAPIView.as_view(),        # GET con cookie → lista
+        ProveedorListAPIView.as_view(),
         name="proveedor-listar",
+    ),
+    path(
+        "logistica/proveedores/detalle/",
+        ProveedorDetailAPIView.as_view(),
+        name="proveedor-detalle",
+    ),
+    path(
+        "logistica/bodegas/",
+        BodegaListAPIView.as_view(),
+        name="bodega-listar",
     ),
 ]

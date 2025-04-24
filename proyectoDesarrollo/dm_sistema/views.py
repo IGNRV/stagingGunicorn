@@ -18,18 +18,18 @@ from rest_framework.views import APIView
 # MODELOS Y SERIALIZERS                                              #
 # ------------------------------------------------------------------ #
 from dm_logistica.models import (
-    Proveedor,          # ← necesario para CREAR y LISTAR proveedores
-    Bodega,             # (se mantiene el import: otras vistas podrían usarlo)
-    BodegaTipo,         # (ídem)
+    Proveedor,          # crear / listar / obtener proveedor
+    Bodega,             # listar bodegas
+    BodegaTipo,
 )
 from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
     OperadorSerializer,
-    ProveedorSerializer,   # ← usado por ProveedorCreateAPIView y ProveedorListAPIView
-    BodegaSerializer,      # (import sin uso directo aquí; se conserva)
-    BodegaTipoSerializer,  # (import sin uso directo aquí; se conserva)
+    ProveedorSerializer,
+    BodegaSerializer,
+    BodegaTipoSerializer,
 )
 
 # ------------------------------------------------------------------------- #
@@ -90,7 +90,7 @@ def enviar_correo_python(
 
 
 # ------------------------------------------------------------------------- #
-#  HELPER → arma operador/modulos/funcionalidades                           #
+#  HELPER → arma operador / modulos / funcionalidades                       #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
     """
@@ -98,26 +98,18 @@ def build_payload(operador: Operador) -> dict:
         • operador
         • modulos
         • funcionalidades
-
-    ⚠️  A PARTIR DE ESTA VERSIÓN **ya no** se incluyen las claves
-       `bodegas` ni `bodega_tipos`.
+    (sin bodegas ni bodega_tipos)
     """
     operador_dict = OperadorSerializer(operador).data
 
     with connection.cursor() as cursor:
-        # -------------------------- MÓDULOS ------------------------------ #
         cursor.execute(QUERY_MODULOS, [operador.id, operador.id_empresa_id])
         mod_rows = cursor.fetchall()
         modulos = [
-            {
-                "nombre_menu": row[0],
-                "id_modulo":   row[1],
-                "icon":        row[2],
-            }
+            {"nombre_menu": row[0], "id_modulo": row[1], "icon": row[2]}
             for row in mod_rows
         ]
 
-        # ----------------------- FUNCIONALIDADES ------------------------- #
         cursor.execute(QUERY_FUNCIONALIDADES, [operador.id])
         func_rows = cursor.fetchall()
         funcionalidades = [
@@ -136,9 +128,6 @@ def build_payload(operador: Operador) -> dict:
             for row in func_rows
         ]
 
-    # ------------------------------------------------------------------ #
-    #  SE ELIMINAN las consultas y la inclusión de BODEGAS / BODEGA_TIPOS
-    # ------------------------------------------------------------------ #
     return {
         "operador":        operador_dict,
         "modulos":         modulos,
@@ -166,9 +155,6 @@ class OperadorLoginAPIView(APIView):
         username = serializer.validated_data["username"]
         password = serializer.validated_data["password"]
 
-        # ------------------------------------------------------------------ #
-        # 1. Verificamos credenciales                                        #
-        # ------------------------------------------------------------------ #
         try:
             op = Operador.objects.select_related("id_empresa").get(username=username)
         except Operador.DoesNotExist:
@@ -177,19 +163,11 @@ class OperadorLoginAPIView(APIView):
         if crypt.crypt(password, op.password or "") != (op.password or ""):
             return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # ------------------------------------------------------------------ #
-        # 1.1  Empresa activa? (estado = 1)                                  #
-        # ------------------------------------------------------------------ #
-        empresa = op.id_empresa                         # FK → dm_sistema.empresa
+        empresa = op.id_empresa
         if not empresa or empresa.estado != 1:
-            return Response(
-                {"detail": "La empresa asociada se encuentra inactiva."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
 
-        # ------------------------------------------------------------------ #
-        # 2. Credenciales correctas → registramos sesión + sesión activa     #
-        # ------------------------------------------------------------------ #
         client_ip = self._get_client_ip(request)
 
         token_payload = {
@@ -216,9 +194,6 @@ class OperadorLoginAPIView(APIView):
                 cod_verificacion=cod_verificacion,
             )
 
-        # ------------------------------------------------------------------ #
-        # 3. Enviamos el código de verificación al correo del usuario        #
-        # ------------------------------------------------------------------ #
         enviar_correo_python(
             "DM",
             op.username,
@@ -226,20 +201,14 @@ class OperadorLoginAPIView(APIView):
             f"Hola, tu código es: {cod_verificacion}",
         )
 
-        # ------------------------------------------------------------------ #
-        # 4. Respondemos al cliente + Cookie con el token                    #
-        # ------------------------------------------------------------------ #
-        response = Response(
-            {"detail": "Credenciales válidas"},
-            status=status.HTTP_200_OK,
-        )
+        response = Response({"detail": "Credenciales válidas"}, status=status.HTTP_200_OK)
         response.set_cookie(
             key="auth_token",
             value=jwt_token,
             httponly=True,
-            secure=True,        # Ajusta a False si no usas HTTPS
+            secure=True,
             samesite="Lax",
-            max_age=60 * 60 * 24,   # 1 día
+            max_age=60 * 60 * 24,
         )
         return response
 
@@ -250,8 +219,6 @@ class OperadorLoginAPIView(APIView):
 class OperadorCodigoVerificacionAPIView(APIView):
     """
     POST /dm_sistema/operadores/verificar/
-
-    🔄 RESPUESTA ACTUALIZADA: ya no incluye 'bodegas' ni 'bodega_tipos'.
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -269,12 +236,9 @@ class OperadorCodigoVerificacionAPIView(APIView):
         except Operador.DoesNotExist:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Empresa activa?
         if not op.id_empresa or op.id_empresa.estado != 1:
-            return Response(
-                {"detail": "La empresa asociada se encuentra inactiva."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
 
         sesion_activa = (
             SesionesActivas.objects
@@ -285,7 +249,6 @@ class OperadorCodigoVerificacionAPIView(APIView):
         if not sesion_activa:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Eliminamos otras sesiones
         with transaction.atomic():
             (SesionesActivas.objects
                 .filter(id_operador=op)
@@ -302,8 +265,6 @@ class OperadorCodigoVerificacionAPIView(APIView):
 class OperadorSesionActivaTokenAPIView(APIView):
     """
     GET /dm_sistema/operadores/sesiones-activas-token/
-
-    🔄 RESPUESTA ACTUALIZADA: ya no incluye 'bodegas' ni 'bodega_tipos'.
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -311,10 +272,8 @@ class OperadorSesionActivaTokenAPIView(APIView):
     def get(self, request, *args, **kwargs):
         token_cookie = request.COOKIES.get("auth_token")
         if not token_cookie:
-            return Response(
-                {"detail": "Token no proporcionado"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         sesion_activa = (
             SesionesActivas.objects
@@ -323,16 +282,12 @@ class OperadorSesionActivaTokenAPIView(APIView):
             .first()
         )
         if not sesion_activa:
-            return Response(
-                {"detail": "Token inválido o sesión expirada"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         if not sesion_activa.id_operador.id_empresa or sesion_activa.id_operador.id_empresa.estado != 1:
-            return Response(
-                {"detail": "La empresa asociada se encuentra inactiva."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
 
         respuesta = build_payload(sesion_activa.id_operador)
         return Response(respuesta, status=status.HTTP_200_OK)
@@ -351,17 +306,13 @@ class OperadorLogoutAPIView(APIView):
     def get(self, request, *args, **kwargs):
         token_cookie = request.COOKIES.get("auth_token")
         if not token_cookie:
-            return Response(
-                {"detail": "Token no proporcionado"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         SesionesActivas.objects.filter(token=token_cookie).delete()
 
-        response = Response(
-            {"detail": "Sesión cerrada correctamente"},
-            status=status.HTTP_200_OK,
-        )
+        response = Response({"detail": "Sesión cerrada correctamente"},
+                            status=status.HTTP_200_OK)
         response.set_cookie(
             key="auth_token",
             value="",
@@ -386,10 +337,8 @@ class ProveedorListAPIView(APIView):
     def get(self, request, *args, **kwargs):
         token_cookie = request.COOKIES.get("auth_token")
         if not token_cookie:
-            return Response(
-                {"detail": "Token no proporcionado"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         sesion_activa = (
             SesionesActivas.objects
@@ -398,17 +347,13 @@ class ProveedorListAPIView(APIView):
             .first()
         )
         if not sesion_activa:
-            return Response(
-                {"detail": "Token inválido o sesión expirada"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         empresa = sesion_activa.id_operador.id_empresa
         if not empresa or empresa.estado != 1:
-            return Response(
-                {"detail": "La empresa asociada se encuentra inactiva."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
 
         proveedores_qs = (
             Proveedor.objects
@@ -416,6 +361,101 @@ class ProveedorListAPIView(APIView):
             .order_by("nombre_rs")
         )
         data = ProveedorSerializer(proveedores_qs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
+
+
+# ------------------------------------------------------------------------- #
+#  LISTAR BODEGAS POR EMPRESA (GET)                                         #
+# ------------------------------------------------------------------------- #
+class BodegaListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/bodegas/
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        bodegas_qs = (
+            Bodega.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("nombre_bodega")
+        )
+        data = BodegaSerializer(bodegas_qs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
+
+
+# ------------------------------------------------------------------------- #
+#  OBTENER DETALLE DE PROVEEDOR POR ID (POST)                               #
+# ------------------------------------------------------------------------- #
+class ProveedorDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/proveedores/detalle/
+
+    Body:
+    {
+        "id": <int>    # id del proveedor
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Solo devuelve el proveedor si el `id_empresa` coincide con el de la
+      empresa asociada al operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        prov_id = request.data.get("id")
+        if prov_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            proveedor = Proveedor.objects.get(pk=prov_id, id_empresa=empresa.id)
+        except Proveedor.DoesNotExist:
+            return Response({"detail": "Proveedor no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        data = ProveedorSerializer(proveedor).data
         return Response(data, status=status.HTTP_200_OK)
 
 
@@ -432,10 +472,8 @@ class ProveedorCreateAPIView(APIView):
     def post(self, request, *args, **kwargs):
         token_cookie = request.COOKIES.get("auth_token")
         if not token_cookie:
-            return Response(
-                {"detail": "Token no proporcionado"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         sesion_activa = (
             SesionesActivas.objects
@@ -444,17 +482,13 @@ class ProveedorCreateAPIView(APIView):
             .first()
         )
         if not sesion_activa:
-            return Response(
-                {"detail": "Token inválido o sesión expirada"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         empresa = sesion_activa.id_operador.id_empresa
         if not empresa or empresa.estado != 1:
-            return Response(
-                {"detail": "La empresa asociada se encuentra inactiva."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
 
         data = dict(request.data)
         data.pop("id_empresa", None)
