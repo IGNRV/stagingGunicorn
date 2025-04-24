@@ -18,7 +18,7 @@ from rest_framework.views import APIView
 # MODELOS Y SERIALIZERS                                              #
 # ------------------------------------------------------------------ #
 from dm_logistica.models import (
-    Proveedor,          # ← necesario para el endpoint «crear proveedor»
+    Proveedor,          # ← necesario para CREAR y LISTAR proveedores
     Bodega,
     BodegaTipo,
 )
@@ -27,7 +27,7 @@ from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
     OperadorSerializer,
-    ProveedorSerializer,   # ← usado por ProveedorCreateAPIView
+    ProveedorSerializer,   # ← usado por ProveedorCreateAPIView y ProveedorListAPIView
     BodegaSerializer,
     BodegaTipoSerializer,
 )
@@ -256,20 +256,10 @@ class OperadorLoginAPIView(APIView):
 class OperadorCodigoVerificacionAPIView(APIView):
     """
     POST /dm_sistema/operadores/verificar/
-
     Body:
     {
         "username": "",
         "cod_verificacion": ""
-    }
-
-    Devuelve:
-    {
-        "operador": { ... },
-        "modulos":  [ ... ],
-        "funcionalidades": [ ... ],
-        "bodegas": [ ... ],
-        "bodega_tipos": [ ... ]
     }
     """
     authentication_classes: list = []
@@ -288,9 +278,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
         except Operador.DoesNotExist:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # ------------------------------------------------------------------ #
-        # 0. Empresa activa?                                                 #
-        # ------------------------------------------------------------------ #
+        # Empresa activa?
         if not op.id_empresa or op.id_empresa.estado != 1:
             return Response(
                 {"detail": "La empresa asociada se encuentra inactiva."},
@@ -303,24 +291,17 @@ class OperadorCodigoVerificacionAPIView(APIView):
             .order_by("-fecha_registro")
             .first()
         )
-
         if not sesion_activa:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # ------------------------------------------------------------------ #
-        # Eliminamos todas las otras sesiones activas                        #
-        # ------------------------------------------------------------------ #
+        # Eliminamos otras sesiones
         with transaction.atomic():
             (SesionesActivas.objects
                 .filter(id_operador=op)
                 .exclude(pk=sesion_activa.pk)
                 .delete())
 
-        # ------------------------------------------------------------------ #
-        # Construimos la respuesta                                           #
-        # ------------------------------------------------------------------ #
         payload = build_payload(op)
-
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -331,15 +312,6 @@ class OperadorCodigoVerificacionAPIView(APIView):
 class OperadorSesionActivaTokenAPIView(APIView):
     """
     GET /dm_sistema/operadores/sesiones-activas-token/
-
-    Devuelve:
-    {
-        "operador": { ... },
-        "modulos":  [ ... ],
-        "funcionalidades": [ ... ],
-        "bodegas": [ ... ],
-        "bodega_tipos": [ ... ]
-    }
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -364,9 +336,6 @@ class OperadorSesionActivaTokenAPIView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        # ------------------------------------------------------------------ #
-        # Empresa sigue activa?                                              #
-        # ------------------------------------------------------------------ #
         if not sesion_activa.id_operador.id_empresa or sesion_activa.id_operador.id_empresa.estado != 1:
             return Response(
                 {"detail": "La empresa asociada se encuentra inactiva."},
@@ -383,9 +352,6 @@ class OperadorSesionActivaTokenAPIView(APIView):
 class OperadorLogoutAPIView(APIView):
     """
     GET /dm_sistema/operadores/logout/
-
-    • El cliente debe enviar la cookie `auth_token`.
-    • Se elimina la fila correspondiente en dm_sistema.sesiones_activas.
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -416,42 +382,19 @@ class OperadorLogoutAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  CREAR PROVEEDOR                                                          #
+#  LISTAR PROVEEDORES POR EMPRESA                                           #
 # ------------------------------------------------------------------------- #
-class ProveedorCreateAPIView(APIView):
+class ProveedorListAPIView(APIView):
     """
-    POST /dm_sistema/logistica/proveedores/crear/
-
-    Body (ejemplo):
-    {
-      "giro": "7273824",
-      "descrip_giro": "Servicios informáticos",
-      "rut": "76.543.210-1",
-      "nombre_rs": "Soluciones Digitales SpA",
-      "nombre_fantasia": "SolDigital",
-      "web": "https://soldigital.cl",
-      "fecha_alta": "2025-04-24",
-      "modalidad_pago": "Crédito",
-      "plazo_pago": 45,
-      "estado": 1,
-      "direccion": "Calle Los Naranjos 1234",
-      "id_comuna": 13114,
-      "id_region": 13,
-      "proveedor_unico": 1
-    }
-
-    • El cliente **debe** estar autenticado por cookie `auth_token`.
-    • `id_empresa` se fuerza al de la empresa del usuario autenticado
-      ignorando cualquier valor que venga en el body.
-    • Devuelve el registro creado.
+    GET /dm_sistema/logistica/proveedores/
+    • Requiere cookie `auth_token`.
+    • Devuelve solo los proveedores cuyo `id_empresa` coincide con la empresa
+      del operador autenticado.
     """
     authentication_classes: list = []
     permission_classes:     list = []
 
-    def post(self, request, *args, **kwargs):
-        # ------------------------------------------------------------------ #
-        # 1. Autenticación vía cookie                                        #
-        # ------------------------------------------------------------------ #
+    def get(self, request, *args, **kwargs):
         token_cookie = request.COOKIES.get("auth_token")
         if not token_cookie:
             return Response(
@@ -471,28 +414,64 @@ class ProveedorCreateAPIView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        operador = sesion_activa.id_operador
-        empresa  = operador.id_empresa
-
+        empresa = sesion_activa.id_operador.id_empresa
         if not empresa or empresa.estado != 1:
             return Response(
                 {"detail": "La empresa asociada se encuentra inactiva."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # ------------------------------------------------------------------ #
-        # 2. Preparamos los datos                                            #
-        # ------------------------------------------------------------------ #
-        data = dict(request.data)             # trabajamos con copia mutable
-        data.pop("id_empresa", None)          # forzamos empresa correcta
-        data["id_empresa"] = empresa.id
+        proveedores_qs = (
+            Proveedor.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("nombre_rs")
+        )
+        data = ProveedorSerializer(proveedores_qs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)
 
-        # Aseguramos que fecha_alta esté en formato ISO-8601
+
+# ------------------------------------------------------------------------- #
+#  CREAR PROVEEDOR                                                          #
+# ------------------------------------------------------------------------- #
+class ProveedorCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/proveedores/crear/
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        data = dict(request.data)
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
         data.setdefault("fecha_alta", datetime.now().date())
 
-        # ------------------------------------------------------------------ #
-        # 3. Serializamos y guardamos                                        #
-        # ------------------------------------------------------------------ #
         serializer = ProveedorSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
