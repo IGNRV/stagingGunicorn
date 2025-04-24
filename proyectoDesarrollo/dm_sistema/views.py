@@ -14,7 +14,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from dm_logistica.models import Proveedor, Giro
+from dm_logistica.models import Proveedor, Giro, Bodega
 from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
     OperadorLoginSerializer,
@@ -22,6 +22,7 @@ from .serializer import (
     OperadorSerializer,
     ProveedorSerializer,
     GiroSerializer,
+    BodegaSerializer,
 )
 
 # ------------------------------------------------------------------------- #
@@ -82,7 +83,7 @@ def enviar_correo_python(
 
 
 # ------------------------------------------------------------------------- #
-#  HELPER → arma operador/modulos/funcionalidades/proveedores/giros         #
+#  HELPER → arma operador/modulos/funcionalidades/proveedores/giros/bodegas #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
     """
@@ -92,6 +93,7 @@ def build_payload(operador: Operador) -> dict:
         • funcionalidades
         • proveedores
         • giros
+        • bodegas
     """
     operador_dict = OperadorSerializer(operador).data
 
@@ -135,12 +137,17 @@ def build_payload(operador: Operador) -> dict:
     giros_qs   = Giro.objects.filter(id_empresa=operador.id_empresa_id)
     giros_data = GiroSerializer(giros_qs, many=True).data
 
+    # ----------------------------- BODEGAS ------------------------------- #
+    bodegas_qs   = Bodega.objects.filter(id_empresa=operador.id_empresa_id)
+    bodegas_data = BodegaSerializer(bodegas_qs, many=True).data
+
     return {
         "operador":        operador_dict,
         "modulos":         modulos,
         "funcionalidades": funcionalidades,
         "proveedores":     proveedores_data,
         "giros":           giros_data,
+        "bodegas":         bodegas_data,
     }
 
 
@@ -254,6 +261,16 @@ class OperadorCodigoVerificacionAPIView(APIView):
         "username": "",
         "cod_verificacion": ""
     }
+
+    Devuelve:
+    {
+        "operador": { ... },
+        "modulos":  [ ... ],
+        "funcionalidades": [ ... ],
+        "proveedores": [ ... ],
+        "giros": [ ... ],
+        "bodegas": [ ... ]
+    }
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -308,7 +325,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES, PROVEEDORES Y GIROS POR TOKEN#
+#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES, PROVEEDORES, GIROS Y BODEGAS #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
@@ -320,7 +337,8 @@ class OperadorSesionActivaTokenAPIView(APIView):
         "modulos":  [ ... ],
         "funcionalidades": [ ... ],
         "proveedores": [ ... ],
-        "giros": [ ... ]
+        "giros": [ ... ],
+        "bodegas": [ ... ]
     }
     """
     authentication_classes: list = []
