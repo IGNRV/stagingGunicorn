@@ -19,8 +19,8 @@ from rest_framework.views import APIView
 # ------------------------------------------------------------------ #
 from dm_logistica.models import (
     Proveedor,          # ← necesario para CREAR y LISTAR proveedores
-    Bodega,
-    BodegaTipo,
+    Bodega,             # (se mantiene el import: otras vistas podrían usarlo)
+    BodegaTipo,         # (ídem)
 )
 from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
@@ -28,8 +28,8 @@ from .serializer import (
     OperadorVerificarSerializer,
     OperadorSerializer,
     ProveedorSerializer,   # ← usado por ProveedorCreateAPIView y ProveedorListAPIView
-    BodegaSerializer,
-    BodegaTipoSerializer,
+    BodegaSerializer,      # (import sin uso directo aquí; se conserva)
+    BodegaTipoSerializer,  # (import sin uso directo aquí; se conserva)
 )
 
 # ------------------------------------------------------------------------- #
@@ -90,7 +90,7 @@ def enviar_correo_python(
 
 
 # ------------------------------------------------------------------------- #
-#  HELPER → arma operador/modulos/funcionalidades/bodegas/bodega_tipos      #
+#  HELPER → arma operador/modulos/funcionalidades                           #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
     """
@@ -98,8 +98,9 @@ def build_payload(operador: Operador) -> dict:
         • operador
         • modulos
         • funcionalidades
-        • bodegas
-        • bodega_tipos
+
+    ⚠️  A PARTIR DE ESTA VERSIÓN **ya no** se incluyen las claves
+       `bodegas` ni `bodega_tipos`.
     """
     operador_dict = OperadorSerializer(operador).data
 
@@ -135,20 +136,13 @@ def build_payload(operador: Operador) -> dict:
             for row in func_rows
         ]
 
-    # ----------------------------- BODEGAS ------------------------------- #
-    bodegas_qs   = Bodega.objects.filter(id_empresa=operador.id_empresa_id)
-    bodegas_data = BodegaSerializer(bodegas_qs, many=True).data
-
-    # -------------------------- BODEGA TIPOS ----------------------------- #
-    bodega_tipos_qs   = BodegaTipo.objects.all().order_by("id")
-    bodega_tipos_data = BodegaTipoSerializer(bodega_tipos_qs, many=True).data
-
+    # ------------------------------------------------------------------ #
+    #  SE ELIMINAN las consultas y la inclusión de BODEGAS / BODEGA_TIPOS
+    # ------------------------------------------------------------------ #
     return {
         "operador":        operador_dict,
         "modulos":         modulos,
         "funcionalidades": funcionalidades,
-        "bodegas":         bodegas_data,
-        "bodega_tipos":    bodega_tipos_data,
     }
 
 
@@ -256,11 +250,8 @@ class OperadorLoginAPIView(APIView):
 class OperadorCodigoVerificacionAPIView(APIView):
     """
     POST /dm_sistema/operadores/verificar/
-    Body:
-    {
-        "username": "",
-        "cod_verificacion": ""
-    }
+
+    🔄 RESPUESTA ACTUALIZADA: ya no incluye 'bodegas' ni 'bodega_tipos'.
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -306,12 +297,13 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR, MÓDULOS, FUNCIONALIDADES, BODEGAS Y BODEGA_TIPOS       #
-#  POR TOKEN                                                                #
+#  OBTENER OPERADOR, MÓDULOS Y FUNCIONALIDADES POR TOKEN                    #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
     GET /dm_sistema/operadores/sesiones-activas-token/
+
+    🔄 RESPUESTA ACTUALIZADA: ya no incluye 'bodegas' ni 'bodega_tipos'.
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -387,9 +379,6 @@ class OperadorLogoutAPIView(APIView):
 class ProveedorListAPIView(APIView):
     """
     GET /dm_sistema/logistica/proveedores/
-    • Requiere cookie `auth_token`.
-    • Devuelve solo los proveedores cuyo `id_empresa` coincide con la empresa
-      del operador autenticado.
     """
     authentication_classes: list = []
     permission_classes:     list = []
