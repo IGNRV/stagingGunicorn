@@ -190,7 +190,7 @@ class OperadorLoginAPIView(APIView):
             "jti": secrets.token_hex(8),
         }
         jwt_token = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-        cod_verificacion = secrets.token_hex(16)
+        cod_verificacion = secrets.token_hex(3)
 
         with transaction.atomic():
             sesion = Sesiones.objects.create(

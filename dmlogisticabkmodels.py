@@ -12,7 +12,7 @@ class AjusteDetalleCompra(models.Model):
     id_empresa = models.IntegerField()
     id_proceso_comparacion = models.ForeignKey('ProcesoComparacion', models.DO_NOTHING, db_column='id_proceso_comparacion')
     id_orden_compra = models.ForeignKey('OrdenCompra', models.DO_NOTHING, db_column='id_orden_compra')
-    id_detalle_compra = models.IntegerField()
+    id_detalle_compra = models.ForeignKey('DetalleCompra', models.DO_NOTHING, db_column='id_detalle_compra')
     cantidad = models.IntegerField(blank=True, null=True)
     precio_unitario = models.FloatField()
     glosa = models.CharField(max_length=100)
@@ -27,7 +27,7 @@ class AjusteDetalleCompra(models.Model):
 
 class Atributo(models.Model):
     id_empresa = models.IntegerField()
-    id_modelo_producto = models.ForeignKey('ModeloProducto', models.DO_NOTHING, db_column='id_modelo_producto')
+    id_modelo_producto = models.IntegerField()
     nombre_atributo = models.CharField(max_length=100)
 
     class Meta:
@@ -61,7 +61,7 @@ class Bodega(models.Model):
 class BodegaStock(models.Model):
     id_empresa = models.IntegerField()
     id_bodega = models.ForeignKey(Bodega, models.DO_NOTHING, db_column='id_bodega')
-    id_modelo_producto = models.ForeignKey('ModeloProducto', models.DO_NOTHING, db_column='id_modelo_producto')
+    id_modelo_producto = models.IntegerField()
     stock_critico = models.IntegerField(blank=True, null=True)
     porc_alarma = models.IntegerField(blank=True, null=True)
     alarma = models.SmallIntegerField(blank=True, null=True)
@@ -119,7 +119,7 @@ class Cotizacion(models.Model):
 class DetalleCompra(models.Model):
     id_empresa = models.IntegerField()
     id_orden_compra = models.ForeignKey('OrdenCompra', models.DO_NOTHING, db_column='id_orden_compra')
-    id_modelo_producto = models.ForeignKey('ModeloProducto', models.DO_NOTHING, db_column='id_modelo_producto')
+    id_modelo_producto = models.IntegerField(blank=True, null=True)
     cantidad = models.IntegerField(blank=True, null=True)
     precio_unitario = models.FloatField(blank=True, null=True)
     glosa = models.CharField(max_length=100, blank=True, null=True)
@@ -141,7 +141,7 @@ class DetalleControlInventario(models.Model):
     id_producto_bodega = models.ForeignKey('ProductoBodega', models.DO_NOTHING, db_column='id_producto_bodega', blank=True, null=True)
     id_estado_detalle_control_inventario = models.ForeignKey('EstadoDetalleControlInventario', models.DO_NOTHING, db_column='id_estado_detalle_control_inventario', blank=True, null=True)
     serie = models.CharField(max_length=100, blank=True, null=True)
-    id_modelo_producto = models.ForeignKey('ModeloProducto', models.DO_NOTHING, db_column='id_modelo_producto', blank=True, null=True)
+    id_modelo_producto = models.IntegerField(blank=True, null=True)
     id_estado_producto = models.ForeignKey('EstadoProducto', models.DO_NOTHING, db_column='id_estado_producto', blank=True, null=True)
     cantidad_original = models.FloatField(blank=True, null=True)
     cantidad_actual = models.FloatField(blank=True, null=True)
@@ -169,7 +169,7 @@ class DetalleCotizacion(models.Model):
     detalles = models.CharField(max_length=255, blank=True, null=True)
     descuento_unitario = models.FloatField(blank=True, null=True)
     precio_unitario = models.FloatField(blank=True, null=True)
-    id_modelo_producto = models.ForeignKey('ModeloProducto', models.DO_NOTHING, db_column='id_modelo_producto', blank=True, null=True)
+    id_modelo_producto = models.IntegerField(blank=True, null=True)
     tipo_descuento = models.CharField(max_length=5, blank=True, null=True)
     tipo_item = models.IntegerField(blank=True, null=True)
 
@@ -227,7 +227,7 @@ class EstadoSolicitudCompra(models.Model):
 
 class Giro(models.Model):
     id_empresa = models.IntegerField()
-    id_proveedor = models.IntegerField()
+    id_proveedor = models.ForeignKey('Proveedor', models.DO_NOTHING, db_column='id_proveedor')
     descrip_giro = models.CharField(max_length=250)
     codigo_sii = models.CharField(max_length=10)
 
@@ -256,7 +256,7 @@ class MarcaProducto(models.Model):
 
 
 class ModeloProducto(models.Model):
-    id_modelo_producto = models.IntegerField(primary_key=True)  # The composite primary key (id_modelo_producto, id_empresa) found, that is not supported. The first column is selected.
+    id_modelo_producto = models.IntegerField()
     id_empresa = models.IntegerField()
     id_tipo_marca_producto = models.ForeignKey('TipoMarcaProducto', models.DO_NOTHING, db_column='id_tipo_marca_producto')
     id_identificador_serie = models.ForeignKey(IdentificadorSerie, models.DO_NOTHING, db_column='id_identificador_serie')
@@ -288,12 +288,11 @@ class ModeloProducto(models.Model):
     class Meta:
         managed = False
         db_table = '"dm_logistica"."modelo_producto"'
-        unique_together = (('id_modelo_producto', 'id_empresa'),)
 
 
 class ModeloProductoValores(models.Model):
     id_empresa = models.IntegerField()
-    id_modelo_producto = models.ForeignKey(ModeloProducto, models.DO_NOTHING, db_column='id_modelo_producto')
+    id_modelo_producto = models.IntegerField()
     valor_cliente = models.IntegerField(blank=True, null=True)
     valor_publico = models.IntegerField(blank=True, null=True)
     margen = models.IntegerField(blank=True, null=True)
@@ -386,10 +385,10 @@ class ProcesoComparacion(models.Model):
 
 class ProductoBodega(models.Model):
     id_empresa = models.IntegerField()
-    id_detalle_compra = models.IntegerField()
+    id_detalle_compra = models.ForeignKey(DetalleCompra, models.DO_NOTHING, db_column='id_detalle_compra')
     serie = models.CharField(max_length=100)
     id_bodega = models.ForeignKey(Bodega, models.DO_NOTHING, db_column='id_bodega')
-    id_modelo_producto = models.ForeignKey(ModeloProducto, models.DO_NOTHING, db_column='id_modelo_producto')
+    id_modelo_producto = models.IntegerField()
     id_estado_producto = models.ForeignKey(EstadoProducto, models.DO_NOTHING, db_column='id_estado_producto')
     id_producto_bodega_pack = models.ForeignKey('self', models.DO_NOTHING, db_column='id_producto_bodega_pack', blank=True, null=True)
     lote = models.CharField(max_length=50, blank=True, null=True)
@@ -412,8 +411,16 @@ class ProductoBodega(models.Model):
 
 
 class Proveedor(models.Model):
-    giro = models.CharField(max_length=250)
+    # ------------------------------------------------------------------ #
+    #  CAMBIOS PRINCIPALES                                               #
+    # ------------------------------------------------------------------ #
+    # • id_giro (FK)        → **eliminado** (la relación ya no aplica)
+    # • giro (CharField)    → **nuevo campo** que almacena el código SII
+    #                          del giro como texto (p. ej. "7273824").
+    # ------------------------------------------------------------------ #
+    giro = models.CharField(max_length=10)                       # ← NEW
     descrip_giro = models.CharField(max_length=250, blank=True, null=True)
+
     id_empresa = models.IntegerField()
     rut = models.CharField(max_length=20)
     nombre_rs = models.CharField(max_length=200)
