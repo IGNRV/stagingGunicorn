@@ -1,4 +1,6 @@
-# ./dm_sistema/urls.py
+# --------------------------------------------------------------------------- #
+# ./dm_sistema/urls.py                                                        #
+# --------------------------------------------------------------------------- #
 from django.urls import path
 
 from .views import (
@@ -6,15 +8,18 @@ from .views import (
     OperadorCodigoVerificacionAPIView,
     OperadorSesionActivaTokenAPIView,
     OperadorLogoutAPIView,
+    # -------- LOGÍSTICA -------- #
     ProveedorCreateAPIView,
     ProveedorListAPIView,
-    ProveedorDetailAPIView,   # ← nuevo
-    BodegaListAPIView,        # ← ya existente
+    ProveedorDetailAPIView,
+    ProveedorUpdateAPIView,
+    BodegaListAPIView,
 )
 
 urlpatterns = [
-    path("operadores/validar/",   OperadorLoginAPIView.as_view(),               name="operador-login"),
-    path("operadores/verificar/", OperadorCodigoVerificacionAPIView.as_view(),  name="operador-verificar"),
+    # --------------------------- OPERADORES ----------------------------- #
+    path("operadores/validar/",   OperadorLoginAPIView.as_view(),              name="operador-login"),
+    path("operadores/verificar/", OperadorCodigoVerificacionAPIView.as_view(), name="operador-verificar"),
     path(
         "operadores/sesiones-activas-token/",
         OperadorSesionActivaTokenAPIView.as_view(),
@@ -22,27 +27,12 @@ urlpatterns = [
     ),
     path("operadores/logout/", OperadorLogoutAPIView.as_view(), name="operador-logout"),
 
-    # ------------------------------------------------------------------ #
-    #  ENDPOINTS LOGÍSTICA                                               #
-    # ------------------------------------------------------------------ #
-    path(
-        "logistica/proveedores/crear/",
-        ProveedorCreateAPIView.as_view(),
-        name="proveedor-crear",
-    ),
-    path(
-        "logistica/proveedores/",
-        ProveedorListAPIView.as_view(),
-        name="proveedor-listar",
-    ),
-    path(
-        "logistica/proveedores/detalle/",
-        ProveedorDetailAPIView.as_view(),
-        name="proveedor-detalle",
-    ),
-    path(
-        "logistica/bodegas/",
-        BodegaListAPIView.as_view(),
-        name="bodega-listar",
-    ),
+    # --------------------------- LOGÍSTICA – PROVEEDOR ------------------ #
+    path("logistica/proveedores/crear/",  ProveedorCreateAPIView.as_view(),  name="proveedor-crear"),
+    path("logistica/proveedores/",        ProveedorListAPIView.as_view(),    name="proveedor-listar"),
+    path("logistica/proveedores/detalle/",ProveedorDetailAPIView.as_view(),  name="proveedor-detalle"),
+    path("logistica/proveedores/editar/", ProveedorUpdateAPIView.as_view(),  name="proveedor-editar"),
+
+    # --------------------------- LOGÍSTICA – BODEGA --------------------- #
+    path("logistica/bodegas/",            BodegaListAPIView.as_view(),       name="bodega-listar"),
 ]

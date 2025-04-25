@@ -1,4 +1,6 @@
-# ./dm_sistema/views.py
+# --------------------------------------------------------------------------- #
+# ./dm_sistema/views.py                                                       #
+# --------------------------------------------------------------------------- #
 from __future__ import annotations
 
 import crypt
@@ -6,6 +8,7 @@ import secrets
 import jwt
 import requests
 from datetime import datetime, timezone as dt_timezone
+from typing import Any, Dict            # ← NEW
 
 from django.conf import settings
 from django.db import transaction, connection
@@ -18,7 +21,7 @@ from rest_framework.views import APIView
 # MODELOS Y SERIALIZERS                                              #
 # ------------------------------------------------------------------ #
 from dm_logistica.models import (
-    Proveedor,          # crear / listar / obtener proveedor
+    Proveedor,          # crear / listar / obtener / editar proveedor
     Bodega,             # listar bodegas
     BodegaTipo,
 )
@@ -66,7 +69,7 @@ INNER JOIN dm_sistema.menus                        m
 """
 
 # ------------------------------------------------------------------------- #
-# Función auxiliar para enviar correos                                      #
+#  UTILIDAD → ENVÍO DE CORREOS                                              #
 # ------------------------------------------------------------------------- #
 def enviar_correo_python(
     remitente: str,
@@ -90,28 +93,20 @@ def enviar_correo_python(
 
 
 # ------------------------------------------------------------------------- #
-#  HELPER → arma operador / modulos / funcionalidades                       #
+#  HELPERs                                                                   #
 # ------------------------------------------------------------------------- #
 def build_payload(operador: Operador) -> dict:
-    """
-    Devuelve un diccionario con:
-        • operador
-        • modulos
-        • funcionalidades
-    (sin bodegas ni bodega_tipos)
-    """
+    """Devuelve operador + módulos + funcionalidades (sin bodegas)."""
     operador_dict = OperadorSerializer(operador).data
 
     with connection.cursor() as cursor:
         cursor.execute(QUERY_MODULOS, [operador.id, operador.id_empresa_id])
-        mod_rows = cursor.fetchall()
         modulos = [
             {"nombre_menu": row[0], "id_modulo": row[1], "icon": row[2]}
-            for row in mod_rows
+            for row in cursor.fetchall()
         ]
 
         cursor.execute(QUERY_FUNCIONALIDADES, [operador.id])
-        func_rows = cursor.fetchall()
         funcionalidades = [
             {
                 "id":            row[0],
@@ -125,7 +120,7 @@ def build_payload(operador: Operador) -> dict:
                 "separador_up":  row[8],
                 "id_modulo":     row[9],
             }
-            for row in func_rows
+            for row in cursor.fetchall()
         ]
 
     return {
@@ -133,6 +128,25 @@ def build_payload(operador: Operador) -> dict:
         "modulos":         modulos,
         "funcionalidades": funcionalidades,
     }
+
+
+def _normalize_request_data(data: Any) -> Dict[str, Any]:
+    """
+    Convierte cualquier `QueryDict` / `OrderedDict` en un `dict` plano
+    *tomando solo el primer valor* cuando el valor sea una lista.
+    Esto evita errores típicos al pasar listas a campos Char/Text.
+    """
+    if hasattr(data, "items"):                 # QueryDict / OrderedDict
+        data_dict = {k: v for k, v in data.items()}
+    else:
+        data_dict = dict(data)
+
+    # Deslistar valores (vienen en forma de lista si request = form-data)
+    for k, v in data_dict.items():
+        if isinstance(v, list) and v:
+            data_dict[k] = v[0]
+
+    return data_dict
 
 
 # ------------------------------------------------------------------------- #
@@ -260,7 +274,7 @@ class OperadorCodigoVerificacionAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER OPERADOR, MÓDULOS Y FUNCIONALIDADES POR TOKEN                    #
+#  OBTENER OPERADOR / MÓDULOS / FUNCIONALIDADES POR TOKEN                   #
 # ------------------------------------------------------------------------- #
 class OperadorSesionActivaTokenAPIView(APIView):
     """
@@ -289,12 +303,11 @@ class OperadorSesionActivaTokenAPIView(APIView):
             return Response({"detail": "La empresa asociada se encuentra inactiva."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        respuesta = build_payload(sesion_activa.id_operador)
-        return Response(respuesta, status=status.HTTP_200_OK)
+        return Response(build_payload(sesion_activa.id_operador), status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
-#  LOGOUT – elimina la sesión activa referida por la cookie                 #
+#  LOGOUT                                                                   #
 # ------------------------------------------------------------------------- #
 class OperadorLogoutAPIView(APIView):
     """
@@ -355,13 +368,8 @@ class ProveedorListAPIView(APIView):
             return Response({"detail": "La empresa asociada se encuentra inactiva."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        proveedores_qs = (
-            Proveedor.objects
-            .filter(id_empresa=empresa.id)
-            .order_by("nombre_rs")
-        )
-        data = ProveedorSerializer(proveedores_qs, many=True).data
-        return Response(data, status=status.HTTP_200_OK)
+        qs = Proveedor.objects.filter(id_empresa=empresa.id).order_by("nombre_rs")
+        return Response(ProveedorSerializer(qs, many=True).data, status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -395,30 +403,17 @@ class BodegaListAPIView(APIView):
             return Response({"detail": "La empresa asociada se encuentra inactiva."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        bodegas_qs = (
-            Bodega.objects
-            .filter(id_empresa=empresa.id)
-            .order_by("nombre_bodega")
-        )
-        data = BodegaSerializer(bodegas_qs, many=True).data
-        return Response(data, status=status.HTTP_200_OK)
+        qs = Bodega.objects.filter(id_empresa=empresa.id).order_by("nombre_bodega")
+        return Response(BodegaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
-#  OBTENER DETALLE DE PROVEEDOR POR ID (POST)                               #
+#  OBTENER DETALLE DE PROVEEDOR (POST)                                      #
 # ------------------------------------------------------------------------- #
 class ProveedorDetailAPIView(APIView):
     """
     POST /dm_sistema/logistica/proveedores/detalle/
-
-    Body:
-    {
-        "id": <int>    # id del proveedor
-    }
-
-    • Requiere la cookie `auth_token`.
-    • Solo devuelve el proveedor si el `id_empresa` coincide con el de la
-      empresa asociada al operador autenticado.
+    Body → {"id": <int>}
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -455,12 +450,11 @@ class ProveedorDetailAPIView(APIView):
             return Response({"detail": "Proveedor no encontrado"},
                             status=status.HTTP_404_NOT_FOUND)
 
-        data = ProveedorSerializer(proveedor).data
-        return Response(data, status=status.HTTP_200_OK)
+        return Response(ProveedorSerializer(proveedor).data, status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
-#  CREAR PROVEEDOR                                                          #
+#  CREAR PROVEEDOR (POST)                                                   #
 # ------------------------------------------------------------------------- #
 class ProveedorCreateAPIView(APIView):
     """
@@ -490,7 +484,7 @@ class ProveedorCreateAPIView(APIView):
             return Response({"detail": "La empresa asociada se encuentra inactiva."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        data = dict(request.data)
+        data = _normalize_request_data(request.data)   # ← FIX
         data.pop("id_empresa", None)
         data["id_empresa"] = empresa.id
         data.setdefault("fecha_alta", datetime.now().date())
@@ -502,7 +496,72 @@ class ProveedorCreateAPIView(APIView):
         with transaction.atomic():
             proveedor = serializer.save()
 
-        return Response(
-            ProveedorSerializer(proveedor).data,
-            status=status.HTTP_201_CREATED,
+        return Response(ProveedorSerializer(proveedor).data, status=status.HTTP_201_CREATED)
+
+
+# ------------------------------------------------------------------------- #
+#  EDITAR PROVEEDOR (PUT)   **ARREGLADO**                                   #
+# ------------------------------------------------------------------------- #
+class ProveedorUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/proveedores/editar/
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def put(self, request, *args, **kwargs):
+        # ----------------------- 1. Validación de ID ---------------------- #
+        prov_id = request.data.get("id")
+        if prov_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # ----------------------- 2. Validación de token ------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
         )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ----------------------- 3. Obtenemos proveedor ------------------- #
+        try:
+            proveedor = Proveedor.objects.get(pk=prov_id, id_empresa=empresa.id)
+        except Proveedor.DoesNotExist:
+            return Response({"detail": "Proveedor no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # ----------------------- 4. Datos a actualizar -------------------- #
+        update_data = _normalize_request_data(request.data)
+        update_data.pop("id_empresa", None)
+        update_data.pop("id", None)
+
+        # Si `fecha_alta` llega vacía → la removemos para evitar parseo
+        if isinstance(update_data.get("fecha_alta"), str) and not update_data["fecha_alta"].strip():
+            update_data.pop("fecha_alta")
+
+        serializer = ProveedorSerializer(
+            instance=proveedor,
+            data=update_data,
+            partial=True,       # actualización parcial
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            proveedor = serializer.save()
+
+        return Response(ProveedorSerializer(proveedor).data, status=status.HTTP_200_OK)
