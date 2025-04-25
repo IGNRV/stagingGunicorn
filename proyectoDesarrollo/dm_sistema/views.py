@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 from dm_logistica.models import (
     Proveedor,          # crear / listar / obtener / editar proveedor
     Bodega,             # listar / obtener / editar bodegas
-    BodegaTipo,
+    BodegaTipo,         # listar / obtener tipos de bodega
 )
 from .models import Operador, Sesiones, SesionesActivas
 from .serializer import (
@@ -133,15 +133,14 @@ def build_payload(operador: Operador) -> dict:
 def _normalize_request_data(data: Any) -> Dict[str, Any]:
     """
     Convierte cualquier `QueryDict` / `OrderedDict` en un `dict` plano
-    *tomando solo el primer valor* cuando el valor sea una lista.
+    tomando solo el primer valor cuando sea lista.
     """
     if hasattr(data, "items"):                 # QueryDict / OrderedDict
         data_dict = {k: v for k, v in data.items()}
     else:
         data_dict = dict(data)
 
-    # Deslistar valores (vienen en forma de lista si request = form-data)
-    for k, v in data_dict.items():
+    for k, v in data_dict.items():             # deslistar valores
         if isinstance(v, list) and v:
             data_dict[k] = v[0]
 
@@ -640,3 +639,97 @@ class BodegaUpdateAPIView(APIView):
             bodega = serializer.save()
 
         return Response(BodegaSerializer(bodega).data, status=status.HTTP_200_OK)
+
+
+# ------------------------------------------------------------------------- #
+#  LISTAR TIPOS DE BODEGA (GET)                                             #
+# ------------------------------------------------------------------------- #
+class BodegaTipoListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/bodegas/tipos/
+
+    • Requiere cookie `auth_token`.
+    • Devuelve todos los registros de `dm_logistica.bodega_tipo`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token --------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        if not sesion_activa.id_operador.id_empresa or sesion_activa.id_operador.id_empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Listamos tipos de bodega ------------------ #
+        qs = BodegaTipo.objects.all().order_by("nombre_tipo_bodega")
+        return Response(BodegaTipoSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+
+
+# ------------------------------------------------------------------------- #
+#  OBTENER TIPO DE BODEGA POR ID (POST)                                     #
+# ------------------------------------------------------------------------- #
+class BodegaTipoDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/bodegas/tipos/detalle/
+
+    Body JSON:
+    {
+        "id": <int>   # ← id del registro en dm_logistica.bodega_tipo
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve 404 si el tipo de bodega no existe.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 0) Validación de body ----------------------- #
+        tipo_id = request.data.get("id")
+        if tipo_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        if not sesion_activa.id_operador.id_empresa or sesion_activa.id_operador.id_empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Recuperamos el tipo ---------------------- #
+        try:
+            tipo = BodegaTipo.objects.get(pk=tipo_id)
+        except BodegaTipo.DoesNotExist:
+            return Response({"detail": "Tipo de bodega no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        return Response(BodegaTipoSerializer(tipo).data, status=status.HTTP_200_OK)
