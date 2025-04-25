@@ -22,7 +22,7 @@ from rest_framework.views import APIView
 # ------------------------------------------------------------------ #
 from dm_logistica.models import (
     Proveedor,          # crear / listar / obtener / editar proveedor
-    Bodega,             # listar / obtener / editar bodegas
+    Bodega,             # crear / listar / obtener / editar bodegas
     BodegaTipo,         # listar / obtener tipos de bodega
 )
 from .models import Operador, Sesiones, SesionesActivas
@@ -495,6 +495,64 @@ class ProveedorCreateAPIView(APIView):
             proveedor = serializer.save()
 
         return Response(ProveedorSerializer(proveedor).data, status=status.HTTP_201_CREATED)
+
+
+# ------------------------------------------------------------------------- #
+#  CREAR BODEGA (POST)                                                      #
+# ------------------------------------------------------------------------- #
+class BodegaCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/bodegas/crear/
+
+    Body JSON:
+    {
+        "id_bodega_tipo":  <int>,    # obligatorio
+        "estado_bodega":   <int>,    # obligatorio
+        "nombre_bodega":   "<str>",  # obligatorio
+        "nombre_tipo_bodega": "<str>"   # opcional
+    }
+
+    El `id_empresa` se asigna automáticamente con la empresa del operador
+    autenticado en la cookie.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # --------------------- token ------------------------------------ #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # --------------------- datos ------------------------------------ #
+        data = _normalize_request_data(request.data)
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+
+        serializer = BodegaSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            bodega = serializer.save()
+
+        return Response(BodegaSerializer(bodega).data, status=status.HTTP_201_CREATED)
 
 
 # ------------------------------------------------------------------------- #
