@@ -14,6 +14,7 @@ from .views import (
     ProveedorDetailAPIView,
     ProveedorUpdateAPIView,
     BodegaListAPIView,
+    BodegaUpdateAPIView,            # ← NUEVO
 )
 
 urlpatterns = [
@@ -35,4 +36,5 @@ urlpatterns = [
 
     # --------------------------- LOGÍSTICA – BODEGA --------------------- #
     path("logistica/bodegas/",            BodegaListAPIView.as_view(),       name="bodega-listar"),
+    path("logistica/bodegas/editar/",     BodegaUpdateAPIView.as_view(),     name="bodega-editar"),  # ← NEW
 ]

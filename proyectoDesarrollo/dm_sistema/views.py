@@ -8,7 +8,7 @@ import secrets
 import jwt
 import requests
 from datetime import datetime, timezone as dt_timezone
-from typing import Any, Dict            # ← NEW
+from typing import Any, Dict
 
 from django.conf import settings
 from django.db import transaction, connection
@@ -22,7 +22,7 @@ from rest_framework.views import APIView
 # ------------------------------------------------------------------ #
 from dm_logistica.models import (
     Proveedor,          # crear / listar / obtener / editar proveedor
-    Bodega,             # listar bodegas
+    Bodega,             # listar / obtener / editar bodegas
     BodegaTipo,
 )
 from .models import Operador, Sesiones, SesionesActivas
@@ -134,7 +134,6 @@ def _normalize_request_data(data: Any) -> Dict[str, Any]:
     """
     Convierte cualquier `QueryDict` / `OrderedDict` en un `dict` plano
     *tomando solo el primer valor* cuando el valor sea una lista.
-    Esto evita errores típicos al pasar listas a campos Char/Text.
     """
     if hasattr(data, "items"):                 # QueryDict / OrderedDict
         data_dict = {k: v for k, v in data.items()}
@@ -484,7 +483,7 @@ class ProveedorCreateAPIView(APIView):
             return Response({"detail": "La empresa asociada se encuentra inactiva."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        data = _normalize_request_data(request.data)   # ← FIX
+        data = _normalize_request_data(request.data)
         data.pop("id_empresa", None)
         data["id_empresa"] = empresa.id
         data.setdefault("fecha_alta", datetime.now().date())
@@ -500,7 +499,7 @@ class ProveedorCreateAPIView(APIView):
 
 
 # ------------------------------------------------------------------------- #
-#  EDITAR PROVEEDOR (PUT)   **ARREGLADO**                                   #
+#  EDITAR PROVEEDOR (PUT)                                                   #
 # ------------------------------------------------------------------------- #
 class ProveedorUpdateAPIView(APIView):
     """
@@ -565,3 +564,79 @@ class ProveedorUpdateAPIView(APIView):
             proveedor = serializer.save()
 
         return Response(ProveedorSerializer(proveedor).data, status=status.HTTP_200_OK)
+
+
+# ------------------------------------------------------------------------- #
+#  EDITAR BODEGA (PUT)                                                      #
+# ------------------------------------------------------------------------- #
+class BodegaUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/bodegas/editar/
+
+    Body JSON esperado:
+    {
+        "id":             <int>,          # ← obligatorio
+        "id_bodega_tipo": <int>,          # opcional
+        "nombre_bodega":  "<str>",        # opcional
+        ...
+    }
+
+    • Requiere cookie `auth_token`.
+    • Solo permite editar bodegas que pertenezcan a la misma empresa del usuario.
+    • La actualización es parcial.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def put(self, request, *args, **kwargs):
+        # -------------------- 1) Validación de ID ------------------------ #
+        bod_id = request.data.get("id")
+        if bod_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # -------------------- 2) Verificación de token ------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # -------------------- 3) Recuperamos la bodega ------------------- #
+        try:
+            bodega = Bodega.objects.get(pk=bod_id, id_empresa=empresa.id)
+        except Bodega.DoesNotExist:
+            return Response({"detail": "Bodega no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # -------------------- 4) Datos a actualizar ---------------------- #
+        update_data = _normalize_request_data(request.data)
+        update_data.pop("id_empresa", None)
+        update_data.pop("id", None)
+
+        serializer = BodegaSerializer(
+            instance=bodega,
+            data=update_data,
+            partial=True,            # ← permite omitir campos
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            bodega = serializer.save()
+
+        return Response(BodegaSerializer(bodega).data, status=status.HTTP_200_OK)
