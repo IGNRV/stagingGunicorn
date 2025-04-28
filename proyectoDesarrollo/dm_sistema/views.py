@@ -151,6 +151,14 @@ def _normalize_request_data(data: Any) -> Dict[str, Any]:
 #  LOGIN / VALIDAR                                                          #
 # ------------------------------------------------------------------------- #
 class OperadorLoginAPIView(APIView):
+    """
+    POST /dm_sistema/operadores/validar/
+
+    • Comprueba usuario y contraseña.
+    • Registra la sesión y envía un código de verificación.
+    • **No** envía aún la cookie `auth_token`; esta solo se entrega tras
+      verificar el código en `OperadorCodigoVerificacionAPIView`.
+    """
     authentication_classes: list = []
     permission_classes:     list = []
 
@@ -167,6 +175,7 @@ class OperadorLoginAPIView(APIView):
         username = serializer.validated_data["username"]
         password = serializer.validated_data["password"]
 
+        # ---------------------- 1. Credenciales ------------------------- #
         try:
             op = Operador.objects.select_related("id_empresa").get(username=username)
         except Operador.DoesNotExist:
@@ -175,11 +184,15 @@ class OperadorLoginAPIView(APIView):
         if crypt.crypt(password, op.password or "") != (op.password or ""):
             return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # ---------------------- 2. Empresa activa ----------------------- #
         empresa = op.id_empresa
         if not empresa or empresa.estado != 1:
-            return Response({"detail": "La empresa asociada se encuentra inactiva."},
-                            status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
+        # ---------------------- 3. Registramos sesión ------------------- #
         client_ip = self._get_client_ip(request)
 
         token_payload = {
@@ -188,7 +201,7 @@ class OperadorLoginAPIView(APIView):
             "jti": secrets.token_hex(8),
         }
         jwt_token = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
-        cod_verificacion = secrets.token_hex(3)
+        cod_verificacion = secrets.token_hex(3)  # 6 caracteres hex
 
         with transaction.atomic():
             sesion = Sesiones.objects.create(
@@ -206,6 +219,7 @@ class OperadorLoginAPIView(APIView):
                 cod_verificacion=cod_verificacion,
             )
 
+        # ---------------------- 4. Enviamos código ---------------------- #
         enviar_correo_python(
             "DM",
             op.username,
@@ -213,16 +227,12 @@ class OperadorLoginAPIView(APIView):
             f"Hola, tu código es: {cod_verificacion}",
         )
 
-        response = Response({"detail": "Credenciales válidas"}, status=status.HTTP_200_OK)
-        response.set_cookie(
-            key="auth_token",
-            value=jwt_token,
-            httponly=True,
-            secure=True,
-            samesite="Lax",
-            max_age=60 * 60 * 24,
+        # ---------------------- 5. Respondemos -------------------------- #
+        # *** Sin cookie todavía ***
+        return Response(
+            {"detail": "Credenciales válidas. Revisa tu correo e ingresa el código de verificación."},
+            status=status.HTTP_200_OK,
         )
-        return response
 
 
 # ------------------------------------------------------------------------- #
@@ -231,6 +241,15 @@ class OperadorLoginAPIView(APIView):
 class OperadorCodigoVerificacionAPIView(APIView):
     """
     POST /dm_sistema/operadores/verificar/
+
+    Body:
+    {
+        "username": "",
+        "cod_verificacion": ""
+    }
+
+    • Si el código es correcto, elimina otras sesiones activas del usuario,
+      entrega la cookie `auth_token` y devuelve el payload completo.
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -243,15 +262,18 @@ class OperadorCodigoVerificacionAPIView(APIView):
         username = serializer.validated_data["username"]
         codigo   = serializer.validated_data["cod_verificacion"]
 
+        # ------------------ 1. Usuario existente ------------------------ #
         try:
             op = Operador.objects.select_related("id_empresa").get(username=username)
         except Operador.DoesNotExist:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # ------------------ 2. Empresa activa --------------------------- #
         if not op.id_empresa or op.id_empresa.estado != 1:
             return Response({"detail": "La empresa asociada se encuentra inactiva."},
                             status=status.HTTP_403_FORBIDDEN)
 
+        # ------------------ 3. Código coincide -------------------------- #
         sesion_activa = (
             SesionesActivas.objects
             .filter(id_operador=op, cod_verificacion=codigo)
@@ -261,14 +283,25 @@ class OperadorCodigoVerificacionAPIView(APIView):
         if not sesion_activa:
             return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
 
+        # ------------------ 4. Invalidamos otras sesiones --------------- #
         with transaction.atomic():
             (SesionesActivas.objects
                 .filter(id_operador=op)
                 .exclude(pk=sesion_activa.pk)
                 .delete())
 
-        payload = build_payload(op)
-        return Response(payload, status=status.HTTP_200_OK)
+        # ------------------ 5. Respondemos + cookie --------------------- #
+        payload  = build_payload(op)
+        response = Response(payload, status=status.HTTP_200_OK)
+        response.set_cookie(
+            key="auth_token",
+            value=sesion_activa.token,
+            httponly=True,
+            secure=True,
+            samesite="Lax",
+            max_age=60 * 60 * 24,
+        )
+        return response
 
 
 # ------------------------------------------------------------------------- #
@@ -310,6 +343,9 @@ class OperadorSesionActivaTokenAPIView(APIView):
 class OperadorLogoutAPIView(APIView):
     """
     GET /dm_sistema/operadores/logout/
+
+    • Elimina la fila en `dm_sistema.sesiones_activas` asociada al token
+      de la cookie y limpia la cookie en el navegador.
     """
     authentication_classes: list = []
     permission_classes:     list = []
