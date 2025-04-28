@@ -157,9 +157,15 @@ class OperadorLoginAPIView(APIView):
     POST /dm_sistema/operadores/validar/
 
     • Comprueba usuario y contraseña.
-    • Registra la sesión y envía un código de verificación.
-    • **No** envía aún la cookie `auth_token`; esta solo se entrega tras
-      verificar el código en `OperadorCodigoVerificacionAPIView`.
+    • Si `operador_verificacion` == 1:
+          - registra la sesión,
+          - envía un código de verificación por correo,
+          - **no** entrega la cookie hasta que se valide el código.
+      Si `operador_verificacion` == 0:
+          - registra la sesión,
+          - **no** envía código,
+          - entrega inmediatamente la cookie con el token **y**
+            actualiza `operador_verificacion` a 1.
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -179,12 +185,19 @@ class OperadorLoginAPIView(APIView):
 
         # ---------------------- 1. Credenciales ------------------------- #
         try:
-            op = Operador.objects.select_related("id_empresa").get(username=username)
+            op = (
+                Operador
+                .objects
+                .select_related("id_empresa")
+                .get(username=username)
+            )
         except Operador.DoesNotExist:
-            return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"detail": "Credenciales inválidas"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         if crypt.crypt(password, op.password or "") != (op.password or ""):
-            return Response({"detail": "Credenciales inválidas"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"detail": "Credenciales inválidas"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         # ---------------------- 2. Empresa activa ----------------------- #
         empresa = op.id_empresa
@@ -196,13 +209,12 @@ class OperadorLoginAPIView(APIView):
 
         # ---------------------- 3. Registramos sesión ------------------- #
         client_ip = self._get_client_ip(request)
-
         token_payload = {
             "sub": op.id,
             "iat": int(datetime.now(dt_timezone.utc).timestamp()),
             "jti": secrets.token_hex(8),
         }
-        jwt_token = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
+        jwt_token        = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
         cod_verificacion = secrets.token_hex(3)  # 6 caracteres hex
 
         with transaction.atomic():
@@ -221,7 +233,28 @@ class OperadorLoginAPIView(APIView):
                 cod_verificacion=cod_verificacion,
             )
 
-        # ---------------------- 4. Enviamos código ---------------------- #
+            # ------------ 3.a  Flujo sin verificación (operador_verificacion == 0) ---- #
+            if (op.operador_verificacion or 0) == 0:
+                #   – Marcamos el operador como verificado para próximas sesiones
+                op.operador_verificacion = 1
+                op.save(update_fields=["operador_verificacion"])
+
+                #   – Armamos el payload completo
+                payload  = build_payload(op)
+
+                #   – Respondemos con cookie inmediatamente
+                response = Response(payload, status=status.HTTP_200_OK)
+                response.set_cookie(
+                    key="auth_token",
+                    value=jwt_token,
+                    httponly=True,
+                    secure=True,
+                    samesite="Lax",
+                    max_age=60 * 60 * 24,      # 24 h
+                )
+                return response        # ← fin del flujo sin verificación
+
+        # ---------------------- 4. Flujo con verificación (valor = 1) ---- #
         enviar_correo_python(
             "DM",
             op.username,
@@ -229,10 +262,13 @@ class OperadorLoginAPIView(APIView):
             f"Hola, tu código es: {cod_verificacion}",
         )
 
-        # ---------------------- 5. Respondemos -------------------------- #
-        # *** Sin cookie todavía ***
         return Response(
-            {"detail": "Credenciales válidas. Revisa tu correo e ingresa el código de verificación."},
+            {
+                "detail": (
+                    "Credenciales válidas. "
+                    "Revisa tu correo e ingresa el código de verificación."
+                )
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -268,7 +304,8 @@ class OperadorCodigoVerificacionAPIView(APIView):
         try:
             op = Operador.objects.select_related("id_empresa").get(username=username)
         except Operador.DoesNotExist:
-            return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"detail": "Usuario o código inválido"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         # ------------------ 2. Empresa activa --------------------------- #
         if not op.id_empresa or op.id_empresa.estado != 1:
@@ -283,7 +320,8 @@ class OperadorCodigoVerificacionAPIView(APIView):
             .first()
         )
         if not sesion_activa:
-            return Response({"detail": "Usuario o código inválido"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"detail": "Usuario o código inválido"},
+                            status=status.HTTP_401_UNAUTHORIZED)
 
         # ------------------ 4. Invalidamos otras sesiones --------------- #
         with transaction.atomic():
@@ -336,7 +374,8 @@ class OperadorSesionActivaTokenAPIView(APIView):
             return Response({"detail": "La empresa asociada se encuentra inactiva."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        return Response(build_payload(sesion_activa.id_operador), status=status.HTTP_200_OK)
+        return Response(build_payload(sesion_activa.id_operador),
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -405,7 +444,8 @@ class ProveedorListAPIView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
 
         qs = Proveedor.objects.filter(id_empresa=empresa.id).order_by("nombre_rs")
-        return Response(ProveedorSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(ProveedorSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -440,7 +480,8 @@ class BodegaListAPIView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
 
         qs = Bodega.objects.filter(id_empresa=empresa.id).order_by("nombre_bodega")
-        return Response(BodegaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(BodegaSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -496,7 +537,8 @@ class BodegaDetailAPIView(APIView):
             return Response({"detail": "Bodega no encontrada"},
                             status=status.HTTP_404_NOT_FOUND)
 
-        return Response(BodegaSerializer(bodega).data, status=status.HTTP_200_OK)
+        return Response(BodegaSerializer(bodega).data,
+                        status=status.HTTP_200_OK)
 
 # ------------------------------------------------------------------------- #
 #  OBTENER DETALLE DE PROVEEDOR (POST)                                      #
@@ -541,7 +583,8 @@ class ProveedorDetailAPIView(APIView):
             return Response({"detail": "Proveedor no encontrado"},
                             status=status.HTTP_404_NOT_FOUND)
 
-        return Response(ProveedorSerializer(proveedor).data, status=status.HTTP_200_OK)
+        return Response(ProveedorSerializer(proveedor).data,
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -587,7 +630,8 @@ class ProveedorCreateAPIView(APIView):
         with transaction.atomic():
             proveedor = serializer.save()
 
-        return Response(ProveedorSerializer(proveedor).data, status=status.HTTP_201_CREATED)
+        return Response(ProveedorSerializer(proveedor).data,
+                        status=status.HTTP_201_CREATED)
 
 
 # ------------------------------------------------------------------------- #
@@ -645,7 +689,8 @@ class BodegaCreateAPIView(APIView):
         with transaction.atomic():
             bodega = serializer.save()
 
-        return Response(BodegaSerializer(bodega).data, status=status.HTTP_201_CREATED)
+        return Response(BodegaSerializer(bodega).data,
+                        status=status.HTTP_201_CREATED)
 
 
 # ------------------------------------------------------------------------- #
@@ -713,7 +758,8 @@ class ProveedorUpdateAPIView(APIView):
         with transaction.atomic():
             proveedor = serializer.save()
 
-        return Response(ProveedorSerializer(proveedor).data, status=status.HTTP_200_OK)
+        return Response(ProveedorSerializer(proveedor).data,
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -789,7 +835,8 @@ class BodegaUpdateAPIView(APIView):
         with transaction.atomic():
             bodega = serializer.save()
 
-        return Response(BodegaSerializer(bodega).data, status=status.HTTP_200_OK)
+        return Response(BodegaSerializer(bodega).data,
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -828,7 +875,8 @@ class BodegaTipoListAPIView(APIView):
 
         # ------------------ 2) Listamos tipos de bodega ------------------ #
         qs = BodegaTipo.objects.all().order_by("nombre_tipo_bodega")
-        return Response(BodegaTipoSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(BodegaTipoSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -883,7 +931,8 @@ class BodegaTipoDetailAPIView(APIView):
             return Response({"detail": "Tipo de bodega no encontrado"},
                             status=status.HTTP_404_NOT_FOUND)
 
-        return Response(BodegaTipoSerializer(tipo).data, status=status.HTTP_200_OK)
+        return Response(BodegaTipoSerializer(tipo).data,
+                        status=status.HTTP_200_OK)
 
 # ------------------------------------------------------------------------- #
 #  LISTAR COMUNAS (GET)                                                     #
@@ -921,11 +970,12 @@ class ComunaListAPIView(APIView):
 
         # ------------------ 2) Listamos comunas ------------------------- #
         qs = Comuna.objects.all().order_by("nombre_comuna")
-        return Response(ComunaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(ComunaSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
-#  NUEVO: LISTAR COMUNAS POR id_region (POST)                               #
+#  LISTAR COMUNAS POR id_region (POST)                                      #
 # ------------------------------------------------------------------------- #
 class ComunaByRegionAPIView(APIView):
     """
@@ -979,7 +1029,8 @@ class ComunaByRegionAPIView(APIView):
             .filter(id_region=id_region)
             .order_by("nombre_comuna")
         )
-        return Response(ComunaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(ComunaSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
 
 
 # ------------------------------------------------------------------------- #
@@ -1021,4 +1072,5 @@ class RegionListAPIView(APIView):
 
         # ------------------ 2) Listamos regiones ------------------------ #
         qs = Region.objects.all().order_by("nombre")
-        return Response(RegionSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+        return Response(RegionSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
