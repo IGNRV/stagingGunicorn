@@ -754,7 +754,50 @@ class TipoProductoCreateAPIView(APIView):
 
         return Response(TipoProductoSerializer(tipo_prod).data,
                         status=status.HTTP_201_CREATED)
+# ------------------------------------------------------------------------- #
+#  LISTAR TIPOS DE PRODUCTO POR EMPRESA (GET)                                #
+# ------------------------------------------------------------------------- #
+class TipoProductoListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/tipos-producto/
 
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros de `dm_logistica.tipo_producto` cuyo
+      `id_empresa` coincide con el de la empresa asociada al operador.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Listamos tipos de producto --------------- #
+        qs = (
+            TipoProducto.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("nombre_tipo_producto")
+        )
+        return Response(TipoProductoSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
 
 # ------------------------------------------------------------------------- #
 #  EDITAR PROVEEDOR (PUT)                                                   #

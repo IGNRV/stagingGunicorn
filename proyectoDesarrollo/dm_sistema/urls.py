@@ -20,6 +20,7 @@ from .views import (
     BodegaCreateAPIView,
     BodegaDetailAPIView,
     TipoProductoCreateAPIView,        # ← NUEVO
+    TipoProductoListAPIView,         # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -54,8 +55,10 @@ urlpatterns = [
     path("logistica/bodegas/tipos/detalle/",  BodegaTipoDetailAPIView.as_view(), name="bodega-tipo-detalle"),
 
     # --------------------------- LOGÍSTICA – TIPO PRODUCTO -------------- #
-    path("logistica/tipos-producto/crear/", TipoProductoCreateAPIView.as_view(),
-         name="tipo-producto-crear"),                                          # ← NUEVO
+    path("logistica/tipos-producto/",        TipoProductoListAPIView.as_view(),
+     name="tipo-producto-listar"),
+    path("logistica/tipos-producto/crear/",  TipoProductoCreateAPIView.as_view(),
+     name="tipo-producto-crear"),                                        
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
