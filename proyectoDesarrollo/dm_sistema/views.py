@@ -922,7 +922,66 @@ class ComunaListAPIView(APIView):
         # ------------------ 2) Listamos comunas ------------------------- #
         qs = Comuna.objects.all().order_by("nombre_comuna")
         return Response(ComunaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
-    
+
+
+# ------------------------------------------------------------------------- #
+#  NUEVO: LISTAR COMUNAS POR id_region (POST)                               #
+# ------------------------------------------------------------------------- #
+class ComunaByRegionAPIView(APIView):
+    """
+    POST /dm_sistema/comunas/por-region/
+
+    Body JSON:
+    {
+        "id_region": <int>   # ← id del registro en dm_sistema.region
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todas las comunas cuyo `id_region` coincida con el valor enviado,
+      ordenadas por `nombre_comuna`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 0) Validación del body ---------------------- #
+        id_region = request.data.get("id_region")
+        if id_region is None:
+            return Response({"id_region": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        if (
+            not sesion_activa.id_operador.id_empresa
+            or sesion_activa.id_operador.id_empresa.estado != 1
+        ):
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Listamos comunas filtradas --------------- #
+        qs = (
+            Comuna.objects
+            .filter(id_region=id_region)
+            .order_by("nombre_comuna")
+        )
+        return Response(ComunaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+
+
 # ------------------------------------------------------------------------- #
 #  LISTAR REGIONES (GET)                                                    #
 # ------------------------------------------------------------------------- #
