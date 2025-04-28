@@ -20,7 +20,8 @@ from .views import (
     BodegaCreateAPIView,
     BodegaDetailAPIView,
     # -------- SISTEMA ----------- #
-    ComunaListAPIView,                 # ← nuevo import
+    ComunaListAPIView,
+    RegionListAPIView,                  # ← nuevo import
 )
 
 urlpatterns = [
@@ -50,6 +51,7 @@ urlpatterns = [
     path("logistica/bodegas/tipos/",          BodegaTipoListAPIView.as_view(),   name="bodega-tipo-listar"),
     path("logistica/bodegas/tipos/detalle/",  BodegaTipoDetailAPIView.as_view(), name="bodega-tipo-detalle"),
 
-    # --------------------------- SISTEMA – COMUNAS ---------------------- #
-    path("comunas/", ComunaListAPIView.as_view(), name="comuna-listar"),      # ← NUEVO
+    # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
+    path("comunas/",  ComunaListAPIView.as_view(),  name="comuna-listar"),
+    path("regiones/", RegionListAPIView.as_view(),  name="region-listar"),   # ← NUEVO
 ]

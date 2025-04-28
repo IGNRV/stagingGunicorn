@@ -3,7 +3,7 @@
 # --------------------------------------------------------------------------- #
 from rest_framework import serializers
 
-from dm_sistema.models import Operador, Comuna    # ← añadido Comuna
+from dm_sistema.models import Operador, Comuna, Region     # ← se añadió Region
 from dm_logistica.models import (
     Proveedor,
     Bodega,
@@ -72,4 +72,13 @@ class BodegaTipoSerializer(serializers.ModelSerializer):
 class ComunaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Comuna
+        fields = "__all__"
+
+
+# ------------------------------------------------------------------------- #
+#  NUEVO SERIALIZADOR REGION                                                #
+# ------------------------------------------------------------------------- #
+class RegionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Region
         fields = "__all__"

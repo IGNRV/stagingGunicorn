@@ -25,7 +25,7 @@ from dm_logistica.models import (
     Bodega,             # crear / listar / obtener / editar bodegas
     BodegaTipo,         # listar / obtener tipos de bodega
 )
-from .models import Operador, Sesiones, SesionesActivas, Comuna
+from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
@@ -34,6 +34,7 @@ from .serializer import (
     BodegaSerializer,
     BodegaTipoSerializer,
     ComunaSerializer,
+    RegionSerializer,
 )
 
 # ------------------------------------------------------------------------- #
@@ -921,3 +922,44 @@ class ComunaListAPIView(APIView):
         # ------------------ 2) Listamos comunas ------------------------- #
         qs = Comuna.objects.all().order_by("nombre_comuna")
         return Response(ComunaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
+    
+# ------------------------------------------------------------------------- #
+#  LISTAR REGIONES (GET)                                                    #
+# ------------------------------------------------------------------------- #
+class RegionListAPIView(APIView):
+    """
+    GET /dm_sistema/regiones/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todas las regiones (`dm_sistema.region`) ordenadas por `nombre`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        if (
+            not sesion_activa.id_operador.id_empresa
+            or sesion_activa.id_operador.id_empresa.estado != 1
+        ):
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Listamos regiones ------------------------ #
+        qs = Region.objects.all().order_by("nombre")
+        return Response(RegionSerializer(qs, many=True).data, status=status.HTTP_200_OK)
