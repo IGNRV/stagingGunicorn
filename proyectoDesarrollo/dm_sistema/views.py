@@ -798,7 +798,85 @@ class TipoProductoListAPIView(APIView):
         )
         return Response(TipoProductoSerializer(qs, many=True).data,
                         status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  EDITAR TIPO DE PRODUCTO (PUT)                                            #
+# ------------------------------------------------------------------------- #
+class TipoProductoUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/tipos-producto/editar/
 
+    Body JSON esperado:
+    {
+        "id":                 <int>,          # ← obligatorio
+        "codigo_tipo_producto": "<str>",      # opcional
+        "nombre_tipo_producto": "<str>",      # opcional
+        "estado":               <int>,        # opcional
+        "correlativo_desde":    <int>,        # opcional
+        "correlativo_hasta":    <int>         # opcional
+    }
+
+    • Requiere cookie `auth_token`.
+    • Solo permite editar registros que pertenezcan a la misma empresa
+      del operador autenticado.
+    • La actualización es parcial.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def put(self, request, *args, **kwargs):
+        # ------------------ 0) Validación de ID ------------------------ #
+        tipo_id = request.data.get("id")
+        if tipo_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 1) Verificación de token ------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Recuperamos tipo de producto ------------ #
+        try:
+            tipo_prod = TipoProducto.objects.get(pk=tipo_id, id_empresa=empresa.id)
+        except TipoProducto.DoesNotExist:
+            return Response({"detail": "Tipo de producto no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # ------------------ 3) Datos a actualizar ---------------------- #
+        update_data = _normalize_request_data(request.data)
+        update_data.pop("id_empresa", None)
+        update_data.pop("id", None)
+
+        serializer = TipoProductoSerializer(
+            instance=tipo_prod,
+            data=update_data,
+            partial=True,           # ← permite omitir campos
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 4) Guardamos cambios ----------------------- #
+        with transaction.atomic():
+            tipo_prod = serializer.save()
+
+        return Response(TipoProductoSerializer(tipo_prod).data,
+                        status=status.HTTP_200_OK)
 # ------------------------------------------------------------------------- #
 #  EDITAR PROVEEDOR (PUT)                                                   #
 # ------------------------------------------------------------------------- #
