@@ -19,6 +19,8 @@ from .views import (
     BodegaTipoDetailAPIView,
     BodegaCreateAPIView,
     BodegaDetailAPIView,
+    # -------- SISTEMA ----------- #
+    ComunaListAPIView,                 # ← nuevo import
 )
 
 urlpatterns = [
@@ -41,9 +43,13 @@ urlpatterns = [
     # --------------------------- LOGÍSTICA – BODEGA --------------------- #
     path("logistica/bodegas/",            BodegaListAPIView.as_view(),       name="bodega-listar"),
     path("logistica/bodegas/editar/",     BodegaUpdateAPIView.as_view(),     name="bodega-editar"),
-    path("logistica/bodegas/crear/",      BodegaCreateAPIView.as_view(),      name="bodega-crear"),
-    path("logistica/bodegas/detalle/",    BodegaDetailAPIView.as_view(),      name="bodega-detalle"),
+    path("logistica/bodegas/crear/",      BodegaCreateAPIView.as_view(),     name="bodega-crear"),
+    path("logistica/bodegas/detalle/",    BodegaDetailAPIView.as_view(),     name="bodega-detalle"),
+
     # --------------------------- LOGÍSTICA – BODEGA TIPO ---------------- #
     path("logistica/bodegas/tipos/",          BodegaTipoListAPIView.as_view(),   name="bodega-tipo-listar"),
-    path("logistica/bodegas/tipos/detalle/",  BodegaTipoDetailAPIView.as_view(), name="bodega-tipo-detalle"),  # ← NUEVO
+    path("logistica/bodegas/tipos/detalle/",  BodegaTipoDetailAPIView.as_view(), name="bodega-tipo-detalle"),
+
+    # --------------------------- SISTEMA – COMUNAS ---------------------- #
+    path("comunas/", ComunaListAPIView.as_view(), name="comuna-listar"),      # ← NUEVO
 ]

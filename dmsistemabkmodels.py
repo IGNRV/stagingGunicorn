@@ -8,21 +8,6 @@
 from django.db import models
 
 
-class Comuna(models.Model):
-    nombre_comuna = models.CharField(max_length=255, db_comment='nombre de la comuna')
-    id_region = models.ForeignKey('Region', models.DO_NOTHING, db_column='id_region', db_comment='identifica una region')
-    orden = models.IntegerField(blank=True, null=True, db_comment='campo para despliegue de la informacion por pantalla')
-    cod_zona_primaria = models.IntegerField(blank=True, null=True, db_comment='codigo de area de la comuna')
-    codigo_comuna = models.IntegerField(blank=True, null=True, db_comment='codigo de la comuna')
-    tipo_comuna = models.CharField(max_length=1, blank=True, null=True, db_comment='U = Urbano, R = Rural')
-    territorio = models.CharField(max_length=1, blank=True, null=True, db_comment='Puede ser A, B ó C según clasificacion dada por entel')
-
-    class Meta:
-        managed = False
-        db_table = '"dm_sistema"."comuna"'
-        db_table_comment = 'innodb free: 0 kb; (`id_region`) refer `region`'
-
-
 class Empresa(models.Model):
     razon_social = models.CharField(max_length=100, blank=True, null=True)
     direccion = models.CharField(max_length=200, blank=True, null=True)
@@ -227,18 +212,6 @@ class OperadorPuntoVenta(models.Model):
     class Meta:
         managed = False
         db_table = '"dm_sistema"."operador_punto_venta"'
-
-
-class Region(models.Model):
-    nombre = models.CharField(max_length=255, db_comment='nombre de la region')
-    nombre_corto = models.CharField(max_length=255, blank=True, null=True)
-    orden = models.IntegerField(db_comment='campo para despliegue de la informacion por pantalla')
-    latlon_center = models.CharField(max_length=255, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = '"dm_sistema"."region"'
-        db_table_comment = 'innodb free: 0 kb'
 
 
 class Sesiones(models.Model):

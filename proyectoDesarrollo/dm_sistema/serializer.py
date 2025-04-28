@@ -1,7 +1,9 @@
-# ./dm_sistema/serializer.py
+# --------------------------------------------------------------------------- #
+# ./dm_sistema/serializer.py                                                  #
+# --------------------------------------------------------------------------- #
 from rest_framework import serializers
 
-from dm_sistema.models import Operador
+from dm_sistema.models import Operador, Comuna    # ← añadido Comuna
 from dm_logistica.models import (
     Proveedor,
     Bodega,
@@ -32,7 +34,6 @@ class OperadorSerializer(serializers.ModelSerializer):
 class ProveedorSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Proveedor
-        # definimos explícitamente para asegurar el orden y excluir campos
         fields = [
             "id",
             "giro",
@@ -62,4 +63,13 @@ class BodegaSerializer(serializers.ModelSerializer):
 class BodegaTipoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = BodegaTipo
+        fields = "__all__"
+
+
+# ------------------------------------------------------------------------- #
+#  NUEVO SERIALIZADOR COMUNA                                                #
+# ------------------------------------------------------------------------- #
+class ComunaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Comuna
         fields = "__all__"

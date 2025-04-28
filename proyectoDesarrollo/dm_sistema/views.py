@@ -25,7 +25,7 @@ from dm_logistica.models import (
     Bodega,             # crear / listar / obtener / editar bodegas
     BodegaTipo,         # listar / obtener tipos de bodega
 )
-from .models import Operador, Sesiones, SesionesActivas
+from .models import Operador, Sesiones, SesionesActivas, Comuna
 from .serializer import (
     OperadorLoginSerializer,
     OperadorVerificarSerializer,
@@ -33,6 +33,7 @@ from .serializer import (
     ProveedorSerializer,
     BodegaSerializer,
     BodegaTipoSerializer,
+    ComunaSerializer,
 )
 
 # ------------------------------------------------------------------------- #
@@ -882,3 +883,41 @@ class BodegaTipoDetailAPIView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         return Response(BodegaTipoSerializer(tipo).data, status=status.HTTP_200_OK)
+
+# ------------------------------------------------------------------------- #
+#  LISTAR COMUNAS (GET)                                                     #
+# ------------------------------------------------------------------------- #
+class ComunaListAPIView(APIView):
+    """
+    GET /dm_sistema/comunas/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todas las comunas (`dm_sistema.comuna`) ordenadas por `nombre_comuna`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        if not sesion_activa.id_operador.id_empresa or sesion_activa.id_operador.id_empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Listamos comunas ------------------------- #
+        qs = Comuna.objects.all().order_by("nombre_comuna")
+        return Response(ComunaSerializer(qs, many=True).data, status=status.HTTP_200_OK)
