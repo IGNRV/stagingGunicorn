@@ -3,11 +3,12 @@
 # --------------------------------------------------------------------------- #
 from rest_framework import serializers
 
-from dm_sistema.models import Operador, Comuna, Region     # ← se añadió Region
-from dm_logistica.models import (
+from dm_sistema.models import Operador, Comuna, Region
+from dm_logistica.models import (                       #  ← se añadió TipoProducto
     Proveedor,
     Bodega,
     BodegaTipo,
+    TipoProducto,
 )
 
 # ------------------------------------------------------------------------- #
@@ -64,6 +65,22 @@ class BodegaTipoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = BodegaTipo
         fields = "__all__"
+
+# ------------------------------------------------------------------------- #
+#  NUEVO SERIALIZADOR TIPO PRODUCTO                                         #
+# ------------------------------------------------------------------------- #
+class TipoProductoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = TipoProducto
+        fields = [
+            "id",
+            "codigo_tipo_producto",
+            "id_empresa",
+            "nombre_tipo_producto",
+            "estado",
+            "correlativo_desde",
+            "correlativo_hasta",
+        ]
 
 
 # ------------------------------------------------------------------------- #

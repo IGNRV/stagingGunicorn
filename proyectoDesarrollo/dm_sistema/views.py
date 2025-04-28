@@ -24,6 +24,7 @@ from dm_logistica.models import (
     Proveedor,          # crear / listar / obtener / editar proveedor
     Bodega,             # crear / listar / obtener / editar bodegas
     BodegaTipo,         # listar / obtener tipos de bodega
+    TipoProducto,       # ← NUEVO: insertar tipo de producto
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -33,6 +34,7 @@ from .serializer import (
     ProveedorSerializer,
     BodegaSerializer,
     BodegaTipoSerializer,
+    TipoProductoSerializer,          # ← NUEVO
     ComunaSerializer,
     RegionSerializer,
 )
@@ -690,6 +692,67 @@ class BodegaCreateAPIView(APIView):
             bodega = serializer.save()
 
         return Response(BodegaSerializer(bodega).data,
+                        status=status.HTTP_201_CREATED)
+
+
+# ------------------------------------------------------------------------- #
+#  CREAR TIPO DE PRODUCTO (POST)                                            #
+# ------------------------------------------------------------------------- #
+class TipoProductoCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/tipos-producto/crear/
+
+    Body JSON:
+    {
+        "codigo_tipo_producto": "<str>",
+        "nombre_tipo_producto": "<str>",
+        "estado":               <int>,
+        "correlativo_desde":    <int>,   # opcional
+        "correlativo_hasta":    <int>    # opcional
+    }
+
+    • `id_empresa` se asigna automáticamente con la empresa asociada al operador
+      autenticado (cookie `auth_token`).
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Normalizamos data ------------------------ #
+        data = _normalize_request_data(request.data)
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+
+        serializer = TipoProductoSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 3) Guardamos registro ----------------------- #
+        with transaction.atomic():
+            tipo_prod = serializer.save()
+
+        return Response(TipoProductoSerializer(tipo_prod).data,
                         status=status.HTTP_201_CREATED)
 
 

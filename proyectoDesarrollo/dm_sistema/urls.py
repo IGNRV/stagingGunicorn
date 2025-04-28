@@ -19,9 +19,10 @@ from .views import (
     BodegaTipoDetailAPIView,
     BodegaCreateAPIView,
     BodegaDetailAPIView,
+    TipoProductoCreateAPIView,        # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
-    ComunaByRegionAPIView,   # ← NUEVO
+    ComunaByRegionAPIView,
     RegionListAPIView,
 )
 
@@ -37,10 +38,10 @@ urlpatterns = [
     path("operadores/logout/", OperadorLogoutAPIView.as_view(), name="operador-logout"),
 
     # --------------------------- LOGÍSTICA – PROVEEDOR ------------------ #
-    path("logistica/proveedores/crear/",  ProveedorCreateAPIView.as_view(),  name="proveedor-crear"),
-    path("logistica/proveedores/",        ProveedorListAPIView.as_view(),    name="proveedor-listar"),
-    path("logistica/proveedores/detalle/",ProveedorDetailAPIView.as_view(),  name="proveedor-detalle"),
-    path("logistica/proveedores/editar/", ProveedorUpdateAPIView.as_view(),  name="proveedor-editar"),
+    path("logistica/proveedores/crear/",   ProveedorCreateAPIView.as_view(),  name="proveedor-crear"),
+    path("logistica/proveedores/",         ProveedorListAPIView.as_view(),    name="proveedor-listar"),
+    path("logistica/proveedores/detalle/", ProveedorDetailAPIView.as_view(),  name="proveedor-detalle"),
+    path("logistica/proveedores/editar/",  ProveedorUpdateAPIView.as_view(),  name="proveedor-editar"),
 
     # --------------------------- LOGÍSTICA – BODEGA --------------------- #
     path("logistica/bodegas/",            BodegaListAPIView.as_view(),       name="bodega-listar"),
@@ -52,8 +53,12 @@ urlpatterns = [
     path("logistica/bodegas/tipos/",          BodegaTipoListAPIView.as_view(),   name="bodega-tipo-listar"),
     path("logistica/bodegas/tipos/detalle/",  BodegaTipoDetailAPIView.as_view(), name="bodega-tipo-detalle"),
 
+    # --------------------------- LOGÍSTICA – TIPO PRODUCTO -------------- #
+    path("logistica/tipos-producto/crear/", TipoProductoCreateAPIView.as_view(),
+         name="tipo-producto-crear"),                                          # ← NUEVO
+
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
-    path("comunas/",                ComunaListAPIView.as_view(),      name="comuna-listar"),
-    path("comunas/por-region/",     ComunaByRegionAPIView.as_view(),  name="comuna-por-region"),  # ← NUEVO
-    path("regiones/",               RegionListAPIView.as_view(),      name="region-listar"),
+    path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
+    path("comunas/por-region/", ComunaByRegionAPIView.as_view(), name="comuna-por-region"),
+    path("regiones/",           RegionListAPIView.as_view(),     name="region-listar"),
 ]
