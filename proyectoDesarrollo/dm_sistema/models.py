@@ -176,7 +176,7 @@ class Operador(models.Model):
     id_empresa = models.ForeignKey(Empresa, models.DO_NOTHING, db_column='id_empresa')
     superadmin = models.IntegerField(blank=True, null=True)
     fecha_creacion = models.DateTimeField(blank=True, null=True)
-    operador_verificacion = models.BooleanField(blank=True, null=True)
+    operador_verificacion = models.IntegerField(blank=True, null=True)
 
     class Meta:
         managed = False
