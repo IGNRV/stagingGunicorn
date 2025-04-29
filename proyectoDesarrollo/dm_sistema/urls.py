@@ -32,7 +32,9 @@ from .views import (
     MarcaProductoDetailAPIView,
     # -------- LOGÍSTICA – TIPO-MARCA ------ #
     TipoMarcaProductoCreateAPIView,
-    TipoMarcaProductoListAPIView,       # ← NUEVO
+    TipoMarcaProductoListAPIView,
+    TipoMarcaProductoUpdateAPIView,
+    TipoMarcaProductoDetailAPIView,   # ← NUEVO: detalle por POST
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -75,8 +77,10 @@ urlpatterns = [
     path("logistica/marcas-producto/detalle/", MarcaProductoDetailAPIView.as_view(),  name="marca-producto-detalle"),
 
     # --------------------------- LOGÍSTICA – TIPO-MARCA PRODUCTO -------- #
-    path("logistica/tipo-marca-producto/crear/", TipoMarcaProductoCreateAPIView.as_view(), name="tipo-marca-producto-crear"),
-    path("logistica/tipo-marca-producto/",        TipoMarcaProductoListAPIView.as_view(),   name="tipo-marca-producto-listar"),
+    path("logistica/tipo-marca-producto/crear/",   TipoMarcaProductoCreateAPIView.as_view(),  name="tipo-marca-producto-crear"),
+    path("logistica/tipo-marca-producto/",         TipoMarcaProductoListAPIView.as_view(),    name="tipo-marca-producto-listar"),
+    path("logistica/tipo-marca-producto/editar/",  TipoMarcaProductoUpdateAPIView.as_view(),  name="tipo-marca-producto-editar"),
+    path("logistica/tipo-marca-producto/detalle/", TipoMarcaProductoDetailAPIView.as_view(),  name="tipo-marca-producto-detalle"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),

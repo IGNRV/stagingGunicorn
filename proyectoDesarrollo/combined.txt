@@ -862,7 +862,7 @@ from dm_logistica.models import (
     BodegaTipo,
     TipoProducto,
     MarcaProducto,
-    TipoMarcaProducto,        # ← NUEVO
+    TipoMarcaProducto,        # ← ya estaba
 )
 
 # ------------------------------------------------------------------------- #
@@ -882,6 +882,7 @@ class OperadorSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Operador
         fields = "__all__"
+
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR PROVEEDOR – SIN id_giro, CON giro (char)                    #
@@ -920,6 +921,7 @@ class BodegaTipoSerializer(serializers.ModelSerializer):
         model  = BodegaTipo
         fields = "__all__"
 
+
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR TIPO PRODUCTO                                               #
 # ------------------------------------------------------------------------- #
@@ -936,6 +938,7 @@ class TipoProductoSerializer(serializers.ModelSerializer):
             "correlativo_hasta",
         ]
 
+
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR MARCA PRODUCTO                                              #
 # ------------------------------------------------------------------------- #
@@ -948,6 +951,7 @@ class MarcaProductoSerializer(serializers.ModelSerializer):
             "nombre_marca_producto",
             "estado",
         ]
+
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR TIPO-MARCA PRODUCTO                                         #
@@ -962,6 +966,7 @@ class TipoMarcaProductoSerializer(serializers.ModelSerializer):
             "id_marca_producto",
         ]
 
+
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR COMUNA                                                      #
 # ------------------------------------------------------------------------- #
@@ -969,6 +974,7 @@ class ComunaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Comuna
         fields = "__all__"
+
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR REGION                                                      #
@@ -1019,7 +1025,9 @@ from .views import (
     MarcaProductoUpdateAPIView,
     MarcaProductoDetailAPIView,
     # -------- LOGÍSTICA – TIPO-MARCA ------ #
-    TipoMarcaProductoCreateAPIView,            # ← NUEVO
+    TipoMarcaProductoCreateAPIView,
+    TipoMarcaProductoListAPIView,
+    TipoMarcaProductoUpdateAPIView,      # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -1062,7 +1070,9 @@ urlpatterns = [
     path("logistica/marcas-producto/detalle/", MarcaProductoDetailAPIView.as_view(),  name="marca-producto-detalle"),
 
     # --------------------------- LOGÍSTICA – TIPO-MARCA PRODUCTO -------- #
-    path("logistica/tipo-marca-producto/crear/", TipoMarcaProductoCreateAPIView.as_view(), name="tipo-marca-producto-crear"),  # ← NUEVO
+    path("logistica/tipo-marca-producto/crear/", TipoMarcaProductoCreateAPIView.as_view(), name="tipo-marca-producto-crear"),
+    path("logistica/tipo-marca-producto/",        TipoMarcaProductoListAPIView.as_view(),   name="tipo-marca-producto-listar"),
+    path("logistica/tipo-marca-producto/editar/", TipoMarcaProductoUpdateAPIView.as_view(), name="tipo-marca-producto-editar"),  # ← NUEVO
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
@@ -2694,6 +2704,124 @@ class TipoMarcaProductoCreateAPIView(APIView):
 
         return Response(TipoMarcaProductoSerializer(tipo_marca).data,
                         status=status.HTTP_201_CREATED)
+# ------------------------------------------------------------------------- #
+#  LISTAR TIPO-MARCA PRODUCTO (GET)                                         #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/tipo-marca-producto/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros de `dm_logistica.tipo_marca_producto`
+      cuyo `id_empresa` coincide con la empresa asociada al operador.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        qs = (
+            TipoMarcaProducto.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("id_tipo_producto", "id_marca_producto")
+        )
+        return Response(TipoMarcaProductoSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  EDITAR TIPO-MARCA PRODUCTO (PUT)                                         #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/tipo-marca-producto/editar/
+
+    Body JSON esperado:
+    {
+        "id":                <int>,  # ← id de dm_logistica.tipo_marca_producto
+        "id_tipo_producto":  <int>,  # opcional
+        "id_marca_producto": <int>,  # opcional
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Solo permite editar la fila cuyo id y id_empresa coinciden con el
+      operador autenticado.
+    • Actualización parcial.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def put(self, request, *args, **kwargs):
+        # 0) Validación de ID
+        registro_id = request.data.get("id")
+        if registro_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 1) Verificación de token
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Recuperamos registro
+        try:
+            registro = TipoMarcaProducto.objects.get(pk=registro_id, id_empresa=empresa.id)
+        except TipoMarcaProducto.DoesNotExist:
+            return Response({"detail": "Registro no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Normalizamos data y preparamos actualización
+        update_data = _normalize_request_data(request.data)
+        update_data.pop("id", None)
+        update_data.pop("id_empresa", None)
+
+        serializer = TipoMarcaProductoSerializer(
+            instance=registro,
+            data=update_data,
+            partial=True,
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4) Guardamos cambios
+        with transaction.atomic():
+            registro_actualizado = serializer.save()
+
+        return Response(TipoMarcaProductoSerializer(registro_actualizado).data,
+                        status=status.HTTP_200_OK)
 
 === ./dm_sistema/models.py ===
 # This is an auto-generated Django model module.

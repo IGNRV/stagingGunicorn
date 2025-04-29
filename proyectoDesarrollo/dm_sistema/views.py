@@ -1658,3 +1658,129 @@ class TipoMarcaProductoListAPIView(APIView):
         )
         return Response(TipoMarcaProductoSerializer(qs, many=True).data,
                         status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  EDITAR TIPO-MARCA PRODUCTO (PUT)                                         #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/tipo-marca-producto/editar/
+
+    Body JSON esperado:
+    {
+        "id":                <int>,  # ← id de dm_logistica.tipo_marca_producto
+        "id_tipo_producto":  <int>,  # opcional
+        "id_marca_producto": <int>,  # opcional
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Solo permite editar la fila cuyo id y id_empresa coinciden con el
+      operador autenticado.
+    • Actualización parcial.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def put(self, request, *args, **kwargs):
+        # 0) Validación de ID
+        registro_id = request.data.get("id")
+        if registro_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 1) Verificación de token
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Recuperamos registro
+        try:
+            registro = TipoMarcaProducto.objects.get(pk=registro_id, id_empresa=empresa.id)
+        except TipoMarcaProducto.DoesNotExist:
+            return Response({"detail": "Registro no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Normalizamos data y preparamos actualización
+        update_data = _normalize_request_data(request.data)
+        update_data.pop("id", None)
+        update_data.pop("id_empresa", None)
+
+        serializer = TipoMarcaProductoSerializer(
+            instance=registro,
+            data=update_data,
+            partial=True,
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4) Guardamos cambios
+        with transaction.atomic():
+            registro_actualizado = serializer.save()
+
+        return Response(TipoMarcaProductoSerializer(registro_actualizado).data,
+                        status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  DETALLE TIPO-MARCA PRODUCTO (POST)                                       #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/tipo-marca-producto/detalle/
+
+    Body JSON:
+    {
+        "id": <int>  # id de dm_logistica.tipo_marca_producto
+    }
+
+    • Requiere cookie `auth_token`.
+    • Devuelve 404 si no existe o pertenece a otra empresa.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        tipo_marca_id = request.data.get("id")
+        if tipo_marca_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            tipo_marca = TipoMarcaProducto.objects.get(pk=tipo_marca_id, id_empresa=empresa.id)
+        except TipoMarcaProducto.DoesNotExist:
+            return Response({"detail": "Tipo-Marca de producto no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        return Response(TipoMarcaProductoSerializer(tipo_marca).data,
+                        status=status.HTTP_200_OK)
