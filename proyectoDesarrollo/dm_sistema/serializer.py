@@ -4,11 +4,12 @@
 from rest_framework import serializers
 
 from dm_sistema.models import Operador, Comuna, Region
-from dm_logistica.models import (                       #  ← se añadió TipoProducto
+from dm_logistica.models import (
     Proveedor,
     Bodega,
     BodegaTipo,
     TipoProducto,
+    MarcaProducto,                    # ← NUEVO
 )
 
 # ------------------------------------------------------------------------- #
@@ -67,7 +68,7 @@ class BodegaTipoSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZADOR TIPO PRODUCTO                                         #
+#  SERIALIZADOR TIPO PRODUCTO                                               #
 # ------------------------------------------------------------------------- #
 class TipoProductoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -82,18 +83,29 @@ class TipoProductoSerializer(serializers.ModelSerializer):
             "correlativo_hasta",
         ]
 
+# ------------------------------------------------------------------------- #
+#  NUEVO SERIALIZADOR MARCA PRODUCTO                                        #
+# ------------------------------------------------------------------------- #
+class MarcaProductoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = MarcaProducto
+        fields = [
+            "id",
+            "id_empresa",
+            "nombre_marca_producto",
+            "estado",
+        ]
 
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZADOR COMUNA                                                #
+#  SERIALIZADOR COMUNA                                                      #
 # ------------------------------------------------------------------------- #
 class ComunaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Comuna
         fields = "__all__"
 
-
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZADOR REGION                                                #
+#  SERIALIZADOR REGION                                                      #
 # ------------------------------------------------------------------------- #
 class RegionSerializer(serializers.ModelSerializer):
     class Meta:

@@ -25,6 +25,7 @@ from dm_logistica.models import (
     Bodega,             # crear / listar / obtener / editar bodegas
     BodegaTipo,         # listar / obtener tipos de bodega
     TipoProducto,       # ← NUEVO: insertar tipo de producto
+    MarcaProducto,      # ← NUEVO: insertar marca de producto
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -37,6 +38,7 @@ from .serializer import (
     TipoProductoSerializer,          # ← NUEVO
     ComunaSerializer,
     RegionSerializer,
+    MarcaProductoSerializer,         # ← NUEVO
 )
 
 # ------------------------------------------------------------------------- #
@@ -933,6 +935,112 @@ class TipoProductoDetailAPIView(APIView):
 
         return Response(TipoProductoSerializer(tipo_prod).data,
                         status=status.HTTP_200_OK)
+    
+# ------------------------------------------------------------------------- #
+#  LISTAR MARCAS DE PRODUCTO POR EMPRESA (GET)                              #
+# ------------------------------------------------------------------------- #
+class MarcaProductoListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/marcas-producto/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todas las marcas de producto (`dm_logistica.marca_producto`)
+      cuyo `id_empresa` coincide con el de la empresa asociada al operador.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Listamos marcas de producto -------------- #
+        qs = (
+            MarcaProducto.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("nombre_marca_producto")
+        )
+        return Response(MarcaProductoSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
+
+# ------------------------------------------------------------------------- #
+#  CREAR MARCA DE PRODUCTO (POST)                                           #
+# ------------------------------------------------------------------------- #
+class MarcaProductoCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/marcas-producto/crear/
+
+    Body JSON:
+    {
+        "nombre_marca_producto": "<str>",
+        "estado":                <int>
+    }
+
+    • `id_empresa` se asigna automáticamente con la empresa asociada al
+      operador autenticado (cookie `auth_token`).
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Normalizamos data ------------------------ #
+        data = _normalize_request_data(request.data)
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+
+        serializer = MarcaProductoSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 3) Guardamos registro ----------------------- #
+        with transaction.atomic():
+            marca = serializer.save()
+
+        return Response(MarcaProductoSerializer(marca).data,
+                        status=status.HTTP_201_CREATED)
 
 # ------------------------------------------------------------------------- #
 #  EDITAR PROVEEDOR (PUT)                                                   #

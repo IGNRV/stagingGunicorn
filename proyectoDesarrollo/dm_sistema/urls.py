@@ -22,7 +22,9 @@ from .views import (
     TipoProductoCreateAPIView,
     TipoProductoListAPIView,
     TipoProductoUpdateAPIView,
-    TipoProductoDetailAPIView,       # ← NUEVO
+    TipoProductoDetailAPIView,
+    MarcaProductoCreateAPIView,
+    MarcaProductoListAPIView,          # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -60,7 +62,11 @@ urlpatterns = [
     path("logistica/tipos-producto/",         TipoProductoListAPIView.as_view(),   name="tipo-producto-listar"),
     path("logistica/tipos-producto/crear/",   TipoProductoCreateAPIView.as_view(), name="tipo-producto-crear"),
     path("logistica/tipos-producto/editar/",  TipoProductoUpdateAPIView.as_view(), name="tipo-producto-editar"),
-    path("logistica/tipos-producto/detalle/", TipoProductoDetailAPIView.as_view(), name="tipo-producto-detalle"),  # ← NUEVO
+    path("logistica/tipos-producto/detalle/", TipoProductoDetailAPIView.as_view(), name="tipo-producto-detalle"),
+
+    # --------------------------- LOGÍSTICA – MARCA PRODUCTO ------------- #
+    path("logistica/marcas-producto/",        MarcaProductoListAPIView.as_view(),  name="marca-producto-listar"),  # ← NUEVO
+    path("logistica/marcas-producto/crear/",  MarcaProductoCreateAPIView.as_view(), name="marca-producto-crear"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
