@@ -1120,6 +1120,62 @@ class MarcaProductoUpdateAPIView(APIView):
                         status=status.HTTP_200_OK)
 
 # ------------------------------------------------------------------------- #
+#  DETALLE MARCA DE PRODUCTO (POST)                                         #
+# ------------------------------------------------------------------------- #
+class MarcaProductoDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/marcas-producto/detalle/
+
+    Body JSON:
+    {
+        "id": <int>   # ← id del registro en dm_logistica.marca_producto
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve 404 si la marca de producto no existe o pertenece a otra empresa.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 0) Validación de body ----------------------- #
+        marca_id = request.data.get("id")
+        if marca_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Recuperamos la marca --------------------- #
+        try:
+            marca = MarcaProducto.objects.get(pk=marca_id, id_empresa=empresa.id)
+        except MarcaProducto.DoesNotExist:
+            return Response({"detail": "Marca de producto no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        return Response(MarcaProductoSerializer(marca).data,
+                        status=status.HTTP_200_OK)
+
+# ------------------------------------------------------------------------- #
 #  EDITAR PROVEEDOR (PUT)                                                   #
 # ------------------------------------------------------------------------- #
 class ProveedorUpdateAPIView(APIView):
