@@ -48,7 +48,7 @@ class AtributoDetalle(models.Model):
 
 class Bodega(models.Model):
     id_empresa = models.IntegerField()
-    id_bodega_tipo = models.ForeignKey('BodegaTipo', models.DO_NOTHING, db_column='id_bodega_tipo')
+    id_bodega_tipo = models.IntegerField()
     estado_bodega = models.IntegerField()
     nombre_bodega = models.CharField(max_length=100)
     nombre_tipo_bodega = models.CharField(max_length=50, blank=True, null=True)
@@ -553,6 +553,8 @@ class TipoProducto(models.Model):
     id_empresa = models.IntegerField()
     nombre_tipo_producto = models.CharField(max_length=100)
     estado = models.IntegerField()
+    correlativo_desde = models.IntegerField(blank=True, null=True)
+    correlativo_hasta = models.IntegerField(blank=True, null=True)
 
     class Meta:
         managed = False

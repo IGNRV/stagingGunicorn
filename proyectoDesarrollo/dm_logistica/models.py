@@ -540,7 +540,7 @@ class TipoControlInventario(models.Model):
 
 class TipoMarcaProducto(models.Model):
     id_empresa = models.IntegerField()
-    id_tipo_producto = models.ForeignKey('TipoProducto', models.DO_NOTHING, db_column='id_tipo_producto')
+    id_tipo_producto = models.IntegerField()
     id_marca_producto = models.ForeignKey(MarcaProducto, models.DO_NOTHING, db_column='id_marca_producto')
 
     class Meta:
