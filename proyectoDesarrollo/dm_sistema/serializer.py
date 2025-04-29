@@ -10,7 +10,7 @@ from dm_logistica.models import (
     BodegaTipo,
     TipoProducto,
     MarcaProducto,
-    TipoMarcaProducto,        # ← NUEVO
+    TipoMarcaProducto,        # ← ya estaba
 )
 
 # ------------------------------------------------------------------------- #
@@ -30,6 +30,7 @@ class OperadorSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Operador
         fields = "__all__"
+
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR PROVEEDOR – SIN id_giro, CON giro (char)                    #
@@ -68,6 +69,7 @@ class BodegaTipoSerializer(serializers.ModelSerializer):
         model  = BodegaTipo
         fields = "__all__"
 
+
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR TIPO PRODUCTO                                               #
 # ------------------------------------------------------------------------- #
@@ -84,6 +86,7 @@ class TipoProductoSerializer(serializers.ModelSerializer):
             "correlativo_hasta",
         ]
 
+
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR MARCA PRODUCTO                                              #
 # ------------------------------------------------------------------------- #
@@ -96,6 +99,7 @@ class MarcaProductoSerializer(serializers.ModelSerializer):
             "nombre_marca_producto",
             "estado",
         ]
+
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR TIPO-MARCA PRODUCTO                                         #
@@ -110,6 +114,7 @@ class TipoMarcaProductoSerializer(serializers.ModelSerializer):
             "id_marca_producto",
         ]
 
+
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR COMUNA                                                      #
 # ------------------------------------------------------------------------- #
@@ -117,6 +122,7 @@ class ComunaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Comuna
         fields = "__all__"
+
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR REGION                                                      #

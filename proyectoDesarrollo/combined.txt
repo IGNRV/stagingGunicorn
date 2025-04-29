@@ -861,7 +861,8 @@ from dm_logistica.models import (
     Bodega,
     BodegaTipo,
     TipoProducto,
-    MarcaProducto,                    # ← NUEVO
+    MarcaProducto,
+    TipoMarcaProducto,        # ← NUEVO
 )
 
 # ------------------------------------------------------------------------- #
@@ -936,7 +937,7 @@ class TipoProductoSerializer(serializers.ModelSerializer):
         ]
 
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZADOR MARCA PRODUCTO                                        #
+#  SERIALIZADOR MARCA PRODUCTO                                              #
 # ------------------------------------------------------------------------- #
 class MarcaProductoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -946,6 +947,19 @@ class MarcaProductoSerializer(serializers.ModelSerializer):
             "id_empresa",
             "nombre_marca_producto",
             "estado",
+        ]
+
+# ------------------------------------------------------------------------- #
+#  SERIALIZADOR TIPO-MARCA PRODUCTO                                         #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = TipoMarcaProducto
+        fields = [
+            "id",
+            "id_empresa",
+            "id_tipo_producto",
+            "id_marca_producto",
         ]
 
 # ------------------------------------------------------------------------- #
@@ -982,25 +996,30 @@ from .views import (
     OperadorCodigoVerificacionAPIView,
     OperadorSesionActivaTokenAPIView,
     OperadorLogoutAPIView,
-    # -------- LOGÍSTICA -------- #
+    # -------- LOGÍSTICA – PROVEEDOR -------- #
     ProveedorCreateAPIView,
     ProveedorListAPIView,
     ProveedorDetailAPIView,
     ProveedorUpdateAPIView,
+    # -------- LOGÍSTICA – BODEGA ----------- #
     BodegaListAPIView,
     BodegaUpdateAPIView,
     BodegaTipoListAPIView,
     BodegaTipoDetailAPIView,
     BodegaCreateAPIView,
     BodegaDetailAPIView,
+    # -------- LOGÍSTICA – TIPO PRODUCTO ---- #
     TipoProductoCreateAPIView,
     TipoProductoListAPIView,
     TipoProductoUpdateAPIView,
     TipoProductoDetailAPIView,
+    # -------- LOGÍSTICA – MARCA PRODUCTO --- #
     MarcaProductoCreateAPIView,
     MarcaProductoListAPIView,
     MarcaProductoUpdateAPIView,
-    MarcaProductoDetailAPIView,          # ← NUEVO
+    MarcaProductoDetailAPIView,
+    # -------- LOGÍSTICA – TIPO-MARCA ------ #
+    TipoMarcaProductoCreateAPIView,            # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -1011,11 +1030,7 @@ urlpatterns = [
     # --------------------------- OPERADORES ----------------------------- #
     path("operadores/validar/",   OperadorLoginAPIView.as_view(),              name="operador-login"),
     path("operadores/verificar/", OperadorCodigoVerificacionAPIView.as_view(), name="operador-verificar"),
-    path(
-        "operadores/sesiones-activas-token/",
-        OperadorSesionActivaTokenAPIView.as_view(),
-        name="operador-sesion-por-token",
-    ),
+    path("operadores/sesiones-activas-token/", OperadorSesionActivaTokenAPIView.as_view(), name="operador-sesion-por-token"),
     path("operadores/logout/", OperadorLogoutAPIView.as_view(), name="operador-logout"),
 
     # --------------------------- LOGÍSTICA – PROVEEDOR ------------------ #
@@ -1044,7 +1059,10 @@ urlpatterns = [
     path("logistica/marcas-producto/",         MarcaProductoListAPIView.as_view(),    name="marca-producto-listar"),
     path("logistica/marcas-producto/crear/",   MarcaProductoCreateAPIView.as_view(),  name="marca-producto-crear"),
     path("logistica/marcas-producto/editar/",  MarcaProductoUpdateAPIView.as_view(),  name="marca-producto-editar"),
-    path("logistica/marcas-producto/detalle/", MarcaProductoDetailAPIView.as_view(),  name="marca-producto-detalle"),  # ← NUEVO
+    path("logistica/marcas-producto/detalle/", MarcaProductoDetailAPIView.as_view(),  name="marca-producto-detalle"),
+
+    # --------------------------- LOGÍSTICA – TIPO-MARCA PRODUCTO -------- #
+    path("logistica/tipo-marca-producto/crear/", TipoMarcaProductoCreateAPIView.as_view(), name="tipo-marca-producto-crear"),  # ← NUEVO
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
@@ -1088,6 +1106,7 @@ from dm_logistica.models import (
     BodegaTipo,         # listar / obtener tipos de bodega
     TipoProducto,       # ← NUEVO: insertar tipo de producto
     MarcaProducto,      # ← NUEVO: insertar marca de producto
+    TipoMarcaProducto,  # ← NUEVO: insertar tipo-marca de producto
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -1101,6 +1120,7 @@ from .serializer import (
     ComunaSerializer,
     RegionSerializer,
     MarcaProductoSerializer,         # ← NUEVO
+    TipoMarcaProductoSerializer,     # ← NUEVO
 )
 
 # ------------------------------------------------------------------------- #
@@ -2618,7 +2638,62 @@ class RegionListAPIView(APIView):
         qs = Region.objects.all().order_by("nombre")
         return Response(RegionSerializer(qs, many=True).data,
                         status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  CREAR TIPO-MARCA PRODUCTO (POST)                                         #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/tipo-marca-producto/crear/
 
+    Body JSON:
+    {
+        "id_tipo_producto":  <int>,
+        "id_marca_producto": <int>
+    }
+
+    • `id_empresa` se asigna automáticamente con la empresa asociada al
+      operador autenticado (cookie `auth_token`).
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # 1) Verificación de token
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # 2) Normalizamos y armamos data
+        data = _normalize_request_data(request.data)
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+
+        serializer = TipoMarcaProductoSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 3) Guardamos registro
+        with transaction.atomic():
+            tipo_marca = serializer.save()
+
+        return Response(TipoMarcaProductoSerializer(tipo_marca).data,
+                        status=status.HTTP_201_CREATED)
 
 === ./dm_sistema/models.py ===
 # This is an auto-generated Django model module.
