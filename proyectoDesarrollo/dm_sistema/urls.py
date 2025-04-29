@@ -21,7 +21,8 @@ from .views import (
     BodegaDetailAPIView,
     TipoProductoCreateAPIView,
     TipoProductoListAPIView,
-    TipoProductoUpdateAPIView,      # ← NUEVO
+    TipoProductoUpdateAPIView,
+    TipoProductoDetailAPIView,       # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -58,7 +59,8 @@ urlpatterns = [
     # --------------------------- LOGÍSTICA – TIPO PRODUCTO -------------- #
     path("logistica/tipos-producto/",         TipoProductoListAPIView.as_view(),   name="tipo-producto-listar"),
     path("logistica/tipos-producto/crear/",   TipoProductoCreateAPIView.as_view(), name="tipo-producto-crear"),
-    path("logistica/tipos-producto/editar/",  TipoProductoUpdateAPIView.as_view(), name="tipo-producto-editar"),  # ← NUEVO
+    path("logistica/tipos-producto/editar/",  TipoProductoUpdateAPIView.as_view(), name="tipo-producto-editar"),
+    path("logistica/tipos-producto/detalle/", TipoProductoDetailAPIView.as_view(), name="tipo-producto-detalle"),  # ← NUEVO
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
