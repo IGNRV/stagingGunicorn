@@ -9,7 +9,8 @@ from dm_logistica.models import (
     Bodega,
     BodegaTipo,
     TipoProducto,
-    MarcaProducto,                    # ← NUEVO
+    MarcaProducto,
+    TipoMarcaProducto,        # ← NUEVO
 )
 
 # ------------------------------------------------------------------------- #
@@ -84,7 +85,7 @@ class TipoProductoSerializer(serializers.ModelSerializer):
         ]
 
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZADOR MARCA PRODUCTO                                        #
+#  SERIALIZADOR MARCA PRODUCTO                                              #
 # ------------------------------------------------------------------------- #
 class MarcaProductoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -94,6 +95,19 @@ class MarcaProductoSerializer(serializers.ModelSerializer):
             "id_empresa",
             "nombre_marca_producto",
             "estado",
+        ]
+
+# ------------------------------------------------------------------------- #
+#  SERIALIZADOR TIPO-MARCA PRODUCTO                                         #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = TipoMarcaProducto
+        fields = [
+            "id",
+            "id_empresa",
+            "id_tipo_producto",
+            "id_marca_producto",
         ]
 
 # ------------------------------------------------------------------------- #

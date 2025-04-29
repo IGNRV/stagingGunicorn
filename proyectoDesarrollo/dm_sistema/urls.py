@@ -8,25 +8,30 @@ from .views import (
     OperadorCodigoVerificacionAPIView,
     OperadorSesionActivaTokenAPIView,
     OperadorLogoutAPIView,
-    # -------- LOGÍSTICA -------- #
+    # -------- LOGÍSTICA – PROVEEDOR -------- #
     ProveedorCreateAPIView,
     ProveedorListAPIView,
     ProveedorDetailAPIView,
     ProveedorUpdateAPIView,
+    # -------- LOGÍSTICA – BODEGA ----------- #
     BodegaListAPIView,
     BodegaUpdateAPIView,
     BodegaTipoListAPIView,
     BodegaTipoDetailAPIView,
     BodegaCreateAPIView,
     BodegaDetailAPIView,
+    # -------- LOGÍSTICA – TIPO PRODUCTO ---- #
     TipoProductoCreateAPIView,
     TipoProductoListAPIView,
     TipoProductoUpdateAPIView,
     TipoProductoDetailAPIView,
+    # -------- LOGÍSTICA – MARCA PRODUCTO --- #
     MarcaProductoCreateAPIView,
     MarcaProductoListAPIView,
     MarcaProductoUpdateAPIView,
-    MarcaProductoDetailAPIView,          # ← NUEVO
+    MarcaProductoDetailAPIView,
+    # -------- LOGÍSTICA – TIPO-MARCA ------ #
+    TipoMarcaProductoCreateAPIView,            # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -37,11 +42,7 @@ urlpatterns = [
     # --------------------------- OPERADORES ----------------------------- #
     path("operadores/validar/",   OperadorLoginAPIView.as_view(),              name="operador-login"),
     path("operadores/verificar/", OperadorCodigoVerificacionAPIView.as_view(), name="operador-verificar"),
-    path(
-        "operadores/sesiones-activas-token/",
-        OperadorSesionActivaTokenAPIView.as_view(),
-        name="operador-sesion-por-token",
-    ),
+    path("operadores/sesiones-activas-token/", OperadorSesionActivaTokenAPIView.as_view(), name="operador-sesion-por-token"),
     path("operadores/logout/", OperadorLogoutAPIView.as_view(), name="operador-logout"),
 
     # --------------------------- LOGÍSTICA – PROVEEDOR ------------------ #
@@ -70,7 +71,10 @@ urlpatterns = [
     path("logistica/marcas-producto/",         MarcaProductoListAPIView.as_view(),    name="marca-producto-listar"),
     path("logistica/marcas-producto/crear/",   MarcaProductoCreateAPIView.as_view(),  name="marca-producto-crear"),
     path("logistica/marcas-producto/editar/",  MarcaProductoUpdateAPIView.as_view(),  name="marca-producto-editar"),
-    path("logistica/marcas-producto/detalle/", MarcaProductoDetailAPIView.as_view(),  name="marca-producto-detalle"),  # ← NUEVO
+    path("logistica/marcas-producto/detalle/", MarcaProductoDetailAPIView.as_view(),  name="marca-producto-detalle"),
+
+    # --------------------------- LOGÍSTICA – TIPO-MARCA PRODUCTO -------- #
+    path("logistica/tipo-marca-producto/crear/", TipoMarcaProductoCreateAPIView.as_view(), name="tipo-marca-producto-crear"),  # ← NUEVO
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
