@@ -997,7 +997,8 @@ from .views import (
     TipoProductoListAPIView,
     TipoProductoUpdateAPIView,
     TipoProductoDetailAPIView,
-    MarcaProductoCreateAPIView,           # ← NUEVO
+    MarcaProductoCreateAPIView,
+    MarcaProductoListAPIView,          # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -1038,7 +1039,8 @@ urlpatterns = [
     path("logistica/tipos-producto/detalle/", TipoProductoDetailAPIView.as_view(), name="tipo-producto-detalle"),
 
     # --------------------------- LOGÍSTICA – MARCA PRODUCTO ------------- #
-    path("logistica/marcas-producto/crear/",  MarcaProductoCreateAPIView.as_view(), name="marca-producto-crear"),  # ← NUEVO
+    path("logistica/marcas-producto/",        MarcaProductoListAPIView.as_view(),  name="marca-producto-listar"),  # ← NUEVO
+    path("logistica/marcas-producto/crear/",  MarcaProductoCreateAPIView.as_view(), name="marca-producto-crear"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
@@ -1992,6 +1994,53 @@ class TipoProductoDetailAPIView(APIView):
         return Response(TipoProductoSerializer(tipo_prod).data,
                         status=status.HTTP_200_OK)
     
+# ------------------------------------------------------------------------- #
+#  LISTAR MARCAS DE PRODUCTO POR EMPRESA (GET)                              #
+# ------------------------------------------------------------------------- #
+class MarcaProductoListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/marcas-producto/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todas las marcas de producto (`dm_logistica.marca_producto`)
+      cuyo `id_empresa` coincide con el de la empresa asociada al operador.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Listamos marcas de producto -------------- #
+        qs = (
+            MarcaProducto.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("nombre_marca_producto")
+        )
+        return Response(MarcaProductoSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
+
 # ------------------------------------------------------------------------- #
 #  CREAR MARCA DE PRODUCTO (POST)                                           #
 # ------------------------------------------------------------------------- #

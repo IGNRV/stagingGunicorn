@@ -1041,6 +1041,83 @@ class MarcaProductoCreateAPIView(APIView):
 
         return Response(MarcaProductoSerializer(marca).data,
                         status=status.HTTP_201_CREATED)
+    
+# ------------------------------------------------------------------------- #
+#  EDITAR MARCA DE PRODUCTO (PUT)                                           #
+# ------------------------------------------------------------------------- #
+class MarcaProductoUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/marcas-producto/editar/
+
+    Body JSON esperado:
+    {
+        "id":                  <int>,   # obligatorio
+        "nombre_marca_producto": "<str>",  # opcional
+        "estado":                <int>     # opcional
+    }
+
+    • Requiere cookie `auth_token`.
+    • Solo permite editar registros que pertenezcan a la misma empresa
+      del operador autenticado.
+    • La actualización es parcial.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def put(self, request, *args, **kwargs):
+        # ------------------ 0) Validación de ID ------------------------ #
+        marca_id = request.data.get("id")
+        if marca_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 1) Verificación de token ------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # ------------------ 2) Recuperamos marca de producto ----------- #
+        try:
+            marca = MarcaProducto.objects.get(pk=marca_id, id_empresa=empresa.id)
+        except MarcaProducto.DoesNotExist:
+            return Response({"detail": "Marca de producto no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # ------------------ 3) Datos a actualizar ---------------------- #
+        update_data = _normalize_request_data(request.data)
+        update_data.pop("id_empresa", None)
+        update_data.pop("id", None)
+
+        serializer = MarcaProductoSerializer(
+            instance=marca,
+            data=update_data,
+            partial=True,          # permite omitir campos
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 4) Guardamos cambios ----------------------- #
+        with transaction.atomic():
+            marca = serializer.save()
+
+        return Response(MarcaProductoSerializer(marca).data,
+                        status=status.HTTP_200_OK)
 
 # ------------------------------------------------------------------------- #
 #  EDITAR PROVEEDOR (PUT)                                                   #
