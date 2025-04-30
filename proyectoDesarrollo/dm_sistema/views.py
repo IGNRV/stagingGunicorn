@@ -2122,3 +2122,68 @@ class BodegaCompletaListAPIView(APIView):
 
         return Response(BodegaCompletaSerializer(data, many=True).data,
                         status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  NUEVO ENDPOINT → DETALLE MODELO DE PRODUCTO (POST)                       #
+# ------------------------------------------------------------------------- #
+class ModeloProductoDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/modelo-producto/detalle/
+
+    Body JSON:
+    {
+        "id_modelo_producto": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve 404 si el modelo no existe o pertenece a otra empresa.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # 0) Validación de body
+        modelo_id = request.data.get("id_modelo_producto")
+        if modelo_id is None:
+            return Response(
+                {"id_modelo_producto": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1) Verificación de token
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 2) Recuperamos el modelo
+        try:
+            modelo = ModeloProducto.objects.get(
+                pk=modelo_id,
+                id_empresa=empresa.id
+            )
+        except ModeloProducto.DoesNotExist:
+            return Response({"detail": "Modelo de producto no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Devolvemos el registro
+        return Response(
+            ModeloProductoSerializer(modelo).data,
+            status=status.HTTP_200_OK
+        )
