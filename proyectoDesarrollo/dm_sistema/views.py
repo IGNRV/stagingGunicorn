@@ -1917,3 +1917,41 @@ class ModeloProductoCreateAPIView(APIView):
 
         return Response(ModeloProductoSerializer(modelo).data,
                         status=status.HTTP_201_CREATED)
+# ------------------------------------------------------------------------- #
+#  LISTAR MODELOS DE PRODUCTO POR EMPRESA (GET)                             #
+# ------------------------------------------------------------------------- #
+class ModeloProductoListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/modelo-producto/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros de `dm_logistica.modelo_producto`
+      cuyo `id_empresa` coincide con la empresa del operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        qs = ModeloProducto.objects.filter(id_empresa=empresa.id).order_by("nombre_modelo")
+        return Response(ModeloProductoSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
