@@ -40,8 +40,11 @@ from .views import (
     # -------- LOGÍSTICA – MODELO PRODUCTO -- #
     ModeloProductoCreateAPIView,
     ModeloProductoListAPIView,
-    ModeloProductoUpdateAPIView,    # ← NUEVO endpoint de edición
-    ModeloProductoDetailAPIView,    # ← NUEVO endpoint de detalle
+    ModeloProductoUpdateAPIView,
+    ModeloProductoDetailAPIView,
+    # ----------------- NUEVO ENDPOINT ----------------- #
+    ModeloProductoCompletoListAPIView,   # ← import del nuevo endpoint
+    # -------------------------------------------------- #
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -98,6 +101,9 @@ urlpatterns = [
     path("logistica/modelo-producto/",       ModeloProductoListAPIView.as_view(),   name="modelo-producto-listar"),
     path("logistica/modelo-producto/editar/",ModeloProductoUpdateAPIView.as_view(), name="modelo-producto-editar"),
     path("logistica/modelo-producto/detalle/",ModeloProductoDetailAPIView.as_view(), name="modelo-producto-detalle"),
+
+    # ---------------------- NUEVO ENDPOINT MODELOS COMPLETOS ------------ #
+    path("logistica/modelos-producto-completos/", ModeloProductoCompletoListAPIView.as_view(), name="modelo-producto-completo-listar"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),

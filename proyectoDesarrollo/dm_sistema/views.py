@@ -37,12 +37,13 @@ from .serializer import (
     ProveedorSerializer,
     BodegaSerializer,
     BodegaTipoSerializer,
-    TipoProductoSerializer,          # ← NUEVO
+    BodegaCompletaSerializer,
+    TipoProductoSerializer,
     ComunaSerializer,
     RegionSerializer,
-    MarcaProductoSerializer,         # ← NUEVO
-    TipoMarcaProductoSerializer,     # ← NUEVO
-    BodegaCompletaSerializer,        # ← NUEVO
+    MarcaProductoSerializer,
+    TipoMarcaProductoSerializer,
+    ModeloProductoCompletoSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -2187,3 +2188,107 @@ class ModeloProductoDetailAPIView(APIView):
             ModeloProductoSerializer(modelo).data,
             status=status.HTTP_200_OK
         )
+# ------------------------------------------------------------------------- #
+#  NUEVO ENDPOINT → LISTAR MODELOS DE PRODUCTO “COMPLETOS” (GET)             #
+# ------------------------------------------------------------------------- #
+class ModeloProductoCompletoListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/modelos-producto-completos/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros de modelo_producto
+      junto con tipo, marca y unidad de medida,
+      filtrados por la empresa del operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # Ejecutamos la consulta con JOINs y filtrado por id_empresa
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    mp.id_modelo_producto,
+                    mp.id_empresa,
+                    tp.codigo_tipo_producto,
+                    tp.nombre_tipo_producto,
+                    mpd.nombre_marca_producto,
+                    um.nombre_unidad_medida,
+                    mp.id_identificador_serie,
+                    mp.codigo_interno,
+                    mp.fccid,
+                    mp.sku,
+                    mp.sku_codigo,
+                    mp.nombre_modelo,
+                    mp.descripcion,
+                    mp.imagen,
+                    mp.estado,
+                    mp.producto_seriado,
+                    mp.nombre_comercial,
+                    mp.despacho_express,
+                    mp.rebaja_consumo,
+                    mp.dias_rebaja_consumo,
+                    mp.orden_solicitud_despacho
+                FROM dm_logistica.modelo_producto AS mp
+                JOIN dm_logistica.tipo_marca_producto AS tmp
+                  ON mp.id_tipo_marca_producto = tmp.id
+                JOIN dm_logistica.tipo_producto AS tp
+                  ON tmp.id_tipo_producto = tp.id
+                JOIN dm_logistica.marca_producto AS mpd
+                  ON tmp.id_marca_producto = mpd.id
+                JOIN dm_logistica.unidad_medida AS um
+                  ON mp.id_unidad_medida = um.id
+                WHERE mp.id_empresa = %s
+                ORDER BY mp.nombre_modelo
+            """, [empresa.id])
+            rows = cursor.fetchall()
+
+        data = [
+            {
+                "id_modelo_producto":       row[0],
+                "id_empresa":               row[1],
+                "codigo_tipo_producto":     row[2],
+                "nombre_tipo_producto":     row[3],
+                "nombre_marca_producto":    row[4],
+                "nombre_unidad_medida":     row[5],
+                "id_identificador_serie":   row[6],
+                "codigo_interno":           row[7],
+                "fccid":                    row[8],
+                "sku":                      row[9],
+                "sku_codigo":               row[10],
+                "nombre_modelo":            row[11],
+                "descripcion":              row[12],
+                "imagen":                   row[13],
+                "estado":                   row[14],
+                "producto_seriado":         row[15],
+                "nombre_comercial":         row[16],
+                "despacho_express":         row[17],
+                "rebaja_consumo":           row[18],
+                "dias_rebaja_consumo":      row[19],
+                "orden_solicitud_despacho": row[20],
+            }
+            for row in rows
+        ]
+
+        serializer = ModeloProductoCompletoSerializer(data, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
