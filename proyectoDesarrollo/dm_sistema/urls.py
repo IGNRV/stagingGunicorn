@@ -14,10 +14,13 @@ from .views import (
     # -------- LOGÍSTICA – BODEGA ----------- #
     BodegaListAPIView,
     BodegaUpdateAPIView,
-    BodegaTipoListAPIView,
-    BodegaTipoDetailAPIView,
     BodegaCreateAPIView,
     BodegaDetailAPIView,
+    # -------- LOGÍSTICA – BODEGA TIPO ------ #
+    BodegaTipoListAPIView,
+    BodegaTipoDetailAPIView,
+    # -------- LOGÍSTICA – BODEGAS “COMPLETAS” – JOIN -------- #
+    BodegaCompletaListAPIView,                  # ← NUEVO
     # -------- LOGÍSTICA – TIPO PRODUCTO ---- #
     TipoProductoCreateAPIView,
     TipoProductoListAPIView,
@@ -35,8 +38,8 @@ from .views import (
     TipoMarcaProductoDetailAPIView,
     TipoMarcaProductoDeleteAPIView,
     # -------- LOGÍSTICA – MODELO PRODUCTO -- #
-    ModeloProductoCreateAPIView,      # ← existente
-    ModeloProductoListAPIView,        # ← NUEVO endpoint para GET
+    ModeloProductoCreateAPIView,
+    ModeloProductoListAPIView,
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -58,13 +61,16 @@ urlpatterns = [
 
     # --------------------------- LOGÍSTICA – BODEGA --------------------- #
     path("logistica/bodegas/",            BodegaListAPIView.as_view(),       name="bodega-listar"),
-    path("logistica/bodegas/editar/",     BodegaUpdateAPIView.as_view(),     name="bodega-editar"),
     path("logistica/bodegas/crear/",      BodegaCreateAPIView.as_view(),     name="bodega-crear"),
     path("logistica/bodegas/detalle/",    BodegaDetailAPIView.as_view(),     name="bodega-detalle"),
+    path("logistica/bodegas/editar/",     BodegaUpdateAPIView.as_view(),     name="bodega-editar"),
 
     # --------------------------- LOGÍSTICA – BODEGA TIPO ---------------- #
     path("logistica/bodegas/tipos/",         BodegaTipoListAPIView.as_view(),   name="bodega-tipo-listar"),
     path("logistica/bodegas/tipos/detalle/", BodegaTipoDetailAPIView.as_view(), name="bodega-tipo-detalle"),
+
+    # ------------ LOGÍSTICA – BODEGAS CON JOIN (tipos) ------------------ #
+    path("logistica/bodegas-completas/", BodegaCompletaListAPIView.as_view(), name="bodega-completa-listar"),
 
     # --------------------------- LOGÍSTICA – TIPO PRODUCTO -------------- #
     path("logistica/tipos-producto/",         TipoProductoListAPIView.as_view(),   name="tipo-producto-listar"),

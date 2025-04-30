@@ -42,6 +42,7 @@ from .serializer import (
     RegionSerializer,
     MarcaProductoSerializer,         # ← NUEVO
     TipoMarcaProductoSerializer,     # ← NUEVO
+    BodegaCompletaSerializer,        # ← NUEVO
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -1954,4 +1955,69 @@ class ModeloProductoListAPIView(APIView):
 
         qs = ModeloProducto.objects.filter(id_empresa=empresa.id).order_by("nombre_modelo")
         return Response(ModeloProductoSerializer(qs, many=True).data,
+                        status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  NUEVO ENDPOINT → LISTAR BODEGAS “COMPLETAS”                             #
+# ------------------------------------------------------------------------- #
+class BodegaCompletaListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/bodegas-completas/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros con JOIN entre bodega y bodega_tipo
+      filtrados por id_empresa del operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # Ejecutamos el JOIN filtrado por la empresa
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  b.id,
+                  b.id_empresa,
+                  bt.nombre_tipo_bodega,
+                  b.estado_bodega,
+                  b.nombre_bodega
+                FROM dm_logistica.bodega b
+                INNER JOIN dm_logistica.bodega_tipo bt
+                  ON b.id_bodega_tipo = bt.id
+                WHERE b.id_empresa = %s
+                ORDER BY b.nombre_bodega
+            """, [empresa.id])
+            rows = cursor.fetchall()
+
+        data = [
+            {
+                "id": row[0],
+                "id_empresa": row[1],
+                "nombre_tipo_bodega": row[2],
+                "estado_bodega": row[3],
+                "nombre_bodega": row[4],
+            }
+            for row in rows
+        ]
+
+        return Response(BodegaCompletaSerializer(data, many=True).data,
                         status=status.HTTP_200_OK)
