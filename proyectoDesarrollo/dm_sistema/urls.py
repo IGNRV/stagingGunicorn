@@ -1,6 +1,4 @@
-# --------------------------------------------------------------------------- #
-# ./dm_sistema/urls.py                                                        #
-# --------------------------------------------------------------------------- #
+# === ./dm_sistema/urls.py ===
 from django.urls import path
 
 from .views import (
@@ -34,7 +32,8 @@ from .views import (
     TipoMarcaProductoCreateAPIView,
     TipoMarcaProductoListAPIView,
     TipoMarcaProductoUpdateAPIView,
-    TipoMarcaProductoDetailAPIView,   # ← NUEVO: detalle por POST
+    TipoMarcaProductoDetailAPIView,
+    TipoMarcaProductoDeleteAPIView,   # ← NUEVO endpoint para DELETE
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -81,6 +80,7 @@ urlpatterns = [
     path("logistica/tipo-marca-producto/",         TipoMarcaProductoListAPIView.as_view(),    name="tipo-marca-producto-listar"),
     path("logistica/tipo-marca-producto/editar/",  TipoMarcaProductoUpdateAPIView.as_view(),  name="tipo-marca-producto-editar"),
     path("logistica/tipo-marca-producto/detalle/", TipoMarcaProductoDetailAPIView.as_view(),  name="tipo-marca-producto-detalle"),
+    path("logistica/tipo-marca-producto/eliminar/", TipoMarcaProductoDeleteAPIView.as_view(), name="tipo-marca-producto-eliminar"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),

@@ -1784,3 +1784,60 @@ class TipoMarcaProductoDetailAPIView(APIView):
 
         return Response(TipoMarcaProductoSerializer(tipo_marca).data,
                         status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ELIMINAR TIPO-MARCA PRODUCTO (DELETE)                                    #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoDeleteAPIView(APIView):
+    """
+    DELETE /dm_sistema/logistica/tipo-marca-producto/eliminar/
+
+    Body JSON:
+    {
+        "id": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Elimina el registro cuyo `id` e `id_empresa` coinciden con el operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def delete(self, request, *args, **kwargs):
+        # 0) Validación de ID
+        registro_id = request.data.get("id")
+        if registro_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 1) Verificación de token
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Recuperamos y eliminamos el registro
+        try:
+            registro = TipoMarcaProducto.objects.get(pk=registro_id, id_empresa=empresa.id)
+        except TipoMarcaProducto.DoesNotExist:
+            return Response({"detail": "Registro no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        with transaction.atomic():
+            registro.delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
