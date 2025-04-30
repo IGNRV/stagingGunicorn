@@ -20,7 +20,7 @@ from .views import (
     BodegaTipoListAPIView,
     BodegaTipoDetailAPIView,
     # -------- LOGÍSTICA – BODEGAS “COMPLETAS” – JOIN -------- #
-    BodegaCompletaListAPIView,                  # ← NUEVO
+    BodegaCompletaListAPIView,
     # -------- LOGÍSTICA – TIPO PRODUCTO ---- #
     TipoProductoCreateAPIView,
     TipoProductoListAPIView,
@@ -40,6 +40,7 @@ from .views import (
     # -------- LOGÍSTICA – MODELO PRODUCTO -- #
     ModeloProductoCreateAPIView,
     ModeloProductoListAPIView,
+    ModeloProductoUpdateAPIView,    # ← NUEVO endpoint de edición
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -94,6 +95,7 @@ urlpatterns = [
     # --------------------------- LOGÍSTICA – MODELO PRODUCTO ----------- #
     path("logistica/modelo-producto/crear/", ModeloProductoCreateAPIView.as_view(), name="modelo-producto-crear"),
     path("logistica/modelo-producto/",       ModeloProductoListAPIView.as_view(),   name="modelo-producto-listar"),
+    path("logistica/modelo-producto/editar/",ModeloProductoUpdateAPIView.as_view(), name="modelo-producto-editar"),  # ← Ruta añadida aquí
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),

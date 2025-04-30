@@ -1919,6 +1919,107 @@ class ModeloProductoCreateAPIView(APIView):
         return Response(ModeloProductoSerializer(modelo).data,
                         status=status.HTTP_201_CREATED)
 # ------------------------------------------------------------------------- #
+#  EDITAR MODELO DE PRODUCTO (PUT)                                           #
+# ------------------------------------------------------------------------- #
+class ModeloProductoUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/modelo-producto/editar/
+
+    Body JSON esperado:
+    {
+        "id_modelo_producto":   <int>,    # obligatorio
+        "id_tipo_marca_producto": <int>,  # opcional
+        "id_identificador_serie": <int>,  # opcional
+        "id_unidad_medida":       <int>,  # opcional
+        "codigo_interno":        "<str>", # opcional
+        "fccid":                 "<str>", # opcional
+        "sku":                   "<str>", # opcional
+        "sku_codigo":            "<str>", # opcional
+        "nombre_modelo":         "<str>", # opcional
+        "descripcion":           "<str>", # opcional
+        "imagen":                "<str>", # opcional
+        "estado":                <int>,   # opcional
+        "producto_seriado":      <int>,   # opcional
+        "nombre_comercial":      "<str>", # opcional
+        "despacho_express":      <int>,   # opcional
+        "rebaja_consumo":        <int>,   # opcional
+        "dias_rebaja_consumo":   <int>,   # opcional
+        "orden_solicitud_despacho": <int> # opcional
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Solo permite editar registros que pertenezcan a la misma empresa
+      del operador autenticado.
+    • La actualización es parcial.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def put(self, request, *args, **kwargs):
+        # ------------------ 0) Validación de ID ------------------------ #
+        modelo_id = request.data.get("id_modelo_producto")
+        if modelo_id is None:
+            return Response(
+                {"id_modelo_producto": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ------------------ 1) Verificación de token ------------------- #
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # ------------------ 2) Recuperamos el modelo ------------------- #
+        try:
+            modelo = ModeloProducto.objects.get(
+                pk=modelo_id,
+                id_empresa=empresa.id
+            )
+        except ModeloProducto.DoesNotExist:
+            return Response({"detail": "Modelo de producto no encontrado"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # ------------------ 3) Datos a actualizar ---------------------- #
+        update_data = _normalize_request_data(request.data)
+        update_data.pop("id_modelo_producto", None)
+        update_data.pop("id_empresa", None)
+
+        serializer = ModeloProductoSerializer(
+            instance=modelo,
+            data=update_data,
+            partial=True
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # ------------------ 4) Guardamos cambios ----------------------- #
+        with transaction.atomic():
+            modelo = serializer.save()
+
+        return Response(
+            ModeloProductoSerializer(modelo).data,
+            status=status.HTTP_200_OK
+        )
+# ------------------------------------------------------------------------- #
 #  LISTAR MODELOS DE PRODUCTO POR EMPRESA (GET)                             #
 # ------------------------------------------------------------------------- #
 class ModeloProductoListAPIView(APIView):
