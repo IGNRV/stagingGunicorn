@@ -1,6 +1,8 @@
-from rest_framework import serializers
-from dm_logistica.models import ModeloProducto
+# dm_logistica/serializer.py
 
+from rest_framework import serializers
+from rest_framework.validators import UniqueTogetherValidator
+from dm_logistica.models import ModeloProducto
 
 class ModeloProductoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -25,4 +27,16 @@ class ModeloProductoSerializer(serializers.ModelSerializer):
             'rebaja_consumo',
             'dias_rebaja_consumo',
             'orden_solicitud_despacho',
+        ]
+        # Quitamos el validador único por sí solo sobre id_modelo_producto
+        extra_kwargs = {
+            'id_modelo_producto': {'validators': []},
+        }
+        # Añadimos validación de unicidad compuesta
+        validators = [
+            UniqueTogetherValidator(
+                queryset=ModeloProducto.objects.all(),
+                fields=['id_modelo_producto', 'id_empresa'],
+                message="Ya existe modelo producto con esta combinación de id_modelo_producto e id_empresa."
+            )
         ]

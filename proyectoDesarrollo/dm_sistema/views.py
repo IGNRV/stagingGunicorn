@@ -1856,48 +1856,50 @@ class ModeloProductoCreateAPIView(APIView):
     Body JSON:
     {
         "id_modelo_producto": <int>,
+        "id_empresa":         <int>,    # ahora opcional: si no se manda, se usará el de la sesión
         "id_tipo_marca_producto": <int>,
         "id_identificador_serie": <int>,
-        "id_unidad_medida": <int>,
-        "codigo_interno": "<str>",
-        "fccid": "<str>",
-        "sku": "<str>",
-        "sku_codigo": "<str>",
-        "nombre_modelo": "<str>",
-        "descripcion": "<str>",
-        "imagen": "<str>",
-        "estado": <int>,
+        "id_unidad_medida":       <int>,
+        "codigo_interno":   "<str>",
+        "fccid":            "<str>",
+        "sku":              "<str>",
+        "sku_codigo":       "<str>",
+        "nombre_modelo":    "<str>",
+        "descripcion":      "<str>",
+        "imagen":           "<str>",
+        "estado":           <int>,
         "producto_seriado": <int>,
         "nombre_comercial": "<str>",
         "despacho_express": <int>,
-        "rebaja_consumo": <int>,
+        "rebaja_consumo":   <int>,
         "dias_rebaja_consumo": <int>,
         "orden_solicitud_despacho": <int>
     }
 
-    El `id_empresa` se asigna automáticamente con la empresa del operador autenticado.
+    Ahora `id_empresa` se toma del JSON si existe, y sólo si no:
+    se asigna la empresa del operador autenticado.
     """
     authentication_classes: list = []
     permission_classes:     list = []
 
     def post(self, request, *args, **kwargs):
         # 1) Verificación de token
-        token_cookie = request.COOKIES.get("auth_token")
-        if not token_cookie:
+        token = request.COOKIES.get("auth_token")
+        if not token:
             return Response({"detail": "Token no proporcionado"},
                             status=status.HTTP_401_UNAUTHORIZED)
 
-        sesion_activa = (
+        sesion = (
             SesionesActivas.objects
             .select_related("id_operador", "id_operador__id_empresa")
-            .filter(token=token_cookie)
+            .filter(token=token)
             .first()
         )
-        if not sesion_activa:
+        if not sesion:
             return Response({"detail": "Token inválido o sesión expirada"},
                             status=status.HTTP_401_UNAUTHORIZED)
 
-        empresa = sesion_activa.id_operador.id_empresa
+        empresa = sesion.id_operador.id_empresa
         if not empresa or empresa.estado != 1:
             return Response(
                 {"detail": "La empresa asociada se encuentra inactiva."},
@@ -1906,8 +1908,9 @@ class ModeloProductoCreateAPIView(APIView):
 
         # 2) Normalizamos y preparamos data
         data = _normalize_request_data(request.data)
-        data.pop("id_empresa", None)
-        data["id_empresa"] = empresa.id
+        # Permitimos que el cliente mande su propio id_empresa; si no, usamos el de la sesión:
+        if "id_empresa" not in data:
+            data["id_empresa"] = empresa.id
 
         serializer = ModeloProductoSerializer(data=data)
         if not serializer.is_valid():

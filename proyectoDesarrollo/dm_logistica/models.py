@@ -256,7 +256,7 @@ class MarcaProducto(models.Model):
 
 
 class ModeloProducto(models.Model):
-    id_modelo_producto = models.IntegerField(primary_key=True)  # The composite primary key (id_modelo_producto, id_empresa) found, that is not supported. The first column is selected.
+    id_modelo_producto = models.IntegerField(primary_key=True)
     id_empresa = models.IntegerField()
     id_tipo_marca_producto = models.ForeignKey('TipoMarcaProducto', models.DO_NOTHING, db_column='id_tipo_marca_producto')
     id_identificador_serie = models.ForeignKey(IdentificadorSerie, models.DO_NOTHING, db_column='id_identificador_serie')
