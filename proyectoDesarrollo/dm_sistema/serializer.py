@@ -10,8 +10,10 @@ from dm_logistica.models import (
     BodegaTipo,
     TipoProducto,
     MarcaProducto,
-    TipoMarcaProducto,        # ← ya estaba
+    TipoMarcaProducto,
+    ModeloProducto,        # ← importado
 )
+from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADORES PARA LOGIN / VERIFICACIÓN                                 #
@@ -30,7 +32,6 @@ class OperadorSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Operador
         fields = "__all__"
-
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR PROVEEDOR – SIN id_giro, CON giro (char)                    #
@@ -57,18 +58,18 @@ class ProveedorSerializer(serializers.ModelSerializer):
             "proveedor_unico",
         ]
 
-
+# ------------------------------------------------------------------------- #
+#  SERIALIZADOR BODEGA                                                      #
+# ------------------------------------------------------------------------- #
 class BodegaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Bodega
         fields = "__all__"
 
-
 class BodegaTipoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = BodegaTipo
         fields = "__all__"
-
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR TIPO PRODUCTO                                               #
@@ -86,7 +87,6 @@ class TipoProductoSerializer(serializers.ModelSerializer):
             "correlativo_hasta",
         ]
 
-
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR MARCA PRODUCTO                                              #
 # ------------------------------------------------------------------------- #
@@ -99,7 +99,6 @@ class MarcaProductoSerializer(serializers.ModelSerializer):
             "nombre_marca_producto",
             "estado",
         ]
-
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR TIPO-MARCA PRODUCTO                                         #
@@ -114,6 +113,10 @@ class TipoMarcaProductoSerializer(serializers.ModelSerializer):
             "id_marca_producto",
         ]
 
+# ------------------------------------------------------------------------- #
+#  SERIALIZADOR MODELO PRODUCTO                                             #
+# ------------------------------------------------------------------------- #
+# Utiliza ModeloProductoSerializer importado de dm_logistica.serializer
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR COMUNA                                                      #
@@ -122,7 +125,6 @@ class ComunaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Comuna
         fields = "__all__"
-
 
 # ------------------------------------------------------------------------- #
 #  SERIALIZADOR REGION                                                      #

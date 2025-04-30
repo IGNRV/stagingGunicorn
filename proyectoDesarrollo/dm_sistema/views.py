@@ -27,6 +27,7 @@ from dm_logistica.models import (
     TipoProducto,       # ← NUEVO: insertar tipo de producto
     MarcaProducto,      # ← NUEVO: insertar marca de producto
     TipoMarcaProducto,  # ← NUEVO: insertar tipo-marca de producto
+    ModeloProducto,     # ← NUEVO: insertar modelo de producto
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -42,6 +43,7 @@ from .serializer import (
     MarcaProductoSerializer,         # ← NUEVO
     TipoMarcaProductoSerializer,     # ← NUEVO
 )
+from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
 # ------------------------------------------------------------------------- #
 #  CONSTANTES SQL – SE COMPARTEN ENTRE LOS ENDPOINTS                        #
@@ -1841,3 +1843,77 @@ class TipoMarcaProductoDeleteAPIView(APIView):
             registro.delete()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+# ------------------------------------------------------------------------- #
+#  CREAR MODELO PRODUCTO (POST)                                             #
+# ------------------------------------------------------------------------- #
+class ModeloProductoCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/modelo-producto/crear/
+
+    Body JSON:
+    {
+        "id_modelo_producto": <int>,
+        "id_tipo_marca_producto": <int>,
+        "id_identificador_serie": <int>,
+        "id_unidad_medida": <int>,
+        "codigo_interno": "<str>",
+        "fccid": "<str>",
+        "sku": "<str>",
+        "sku_codigo": "<str>",
+        "nombre_modelo": "<str>",
+        "descripcion": "<str>",
+        "imagen": "<str>",
+        "estado": <int>,
+        "producto_seriado": <int>,
+        "nombre_comercial": "<str>",
+        "despacho_express": <int>,
+        "rebaja_consumo": <int>,
+        "dias_rebaja_consumo": <int>,
+        "orden_solicitud_despacho": <int>
+    }
+
+    El `id_empresa` se asigna automáticamente con la empresa del operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # 1) Verificación de token
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # 2) Normalizamos y preparamos data
+        data = _normalize_request_data(request.data)
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+
+        serializer = ModeloProductoSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 3) Guardamos registro
+        with transaction.atomic():
+            modelo = serializer.save()
+
+        return Response(ModeloProductoSerializer(modelo).data,
+                        status=status.HTTP_201_CREATED)
