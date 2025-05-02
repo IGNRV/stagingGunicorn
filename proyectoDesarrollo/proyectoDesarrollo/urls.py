@@ -10,9 +10,3 @@ urlpatterns = [
     path('dm_sistema/', include('dm_sistema.urls')),
 ]
 
-# Solo para desarrollo local; en producción lo sirve Nginx
-if settings.DEBUG:
-    urlpatterns += static(
-        settings.MEDIA_URL,
-        document_root=settings.MEDIA_ROOT,
-    )

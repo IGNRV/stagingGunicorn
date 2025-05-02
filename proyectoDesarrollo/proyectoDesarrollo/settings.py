@@ -134,15 +134,3 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ),
 }
-
-# --------------------------------------------------------------------------- #
-#  STATIC & MEDIA                                                             #
-# --------------------------------------------------------------------------- #
-STATIC_URL   = "/static/"
-STATIC_ROOT  = BASE_DIR / "static"
-
-#  ***  NUEVO  ***
-MEDIA_URL    = "/imagenes/"                                       # <-  URL pública
-MEDIA_ROOT   = BASE_DIR / "imagenes"                              # <-  carpeta en disco
-#  Asegúrate de que existan:
-os.makedirs(MEDIA_ROOT, exist_ok=True)

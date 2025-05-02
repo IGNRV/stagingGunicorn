@@ -1862,7 +1862,7 @@ class ModeloProductoCreateAPIView(APIView):
     Body JSON:
     {
         "id_modelo_producto": <int>,
-        "id_empresa":         <int>,    # opcional: si no se manda, se usará el de la sesión
+        "id_empresa":         <int>,    # ahora opcional: si no se manda, se usará el de la sesión
         "id_tipo_marca_producto": <int>,
         "id_identificador_serie": <int>,
         "id_unidad_medida":       <int>,
@@ -1872,7 +1872,7 @@ class ModeloProductoCreateAPIView(APIView):
         "sku_codigo":       "<str>",
         "nombre_modelo":    "<str>",
         "descripcion":      "<str>",
-        "imagen":           "<str> | file",  # ahora opcionalmente file
+        "imagen":           "<str>",
         "estado":           <int>,
         "producto_seriado": <int>,
         "nombre_comercial": "<str>",
@@ -1882,13 +1882,11 @@ class ModeloProductoCreateAPIView(APIView):
         "orden_solicitud_despacho": <int>
     }
 
-    • Acepta `multipart/form-data` con un campo `imagen` file.
-    • Guarda la imagen en disco y en la tabla se inserta la ruta completa.
-    • Si sólo envían nombre, se prefija la ruta.
+    Ahora `id_empresa` se toma del JSON si existe, y sólo si no:
+    se asigna la empresa del operador autenticado.
     """
     authentication_classes: list = []
     permission_classes:     list = []
-    parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request, *args, **kwargs):
         # 1) Verificación de token
@@ -1920,27 +1918,6 @@ class ModeloProductoCreateAPIView(APIView):
         if "id_empresa" not in data:
             data["id_empresa"] = empresa.id
 
-        # -- Manejo de la imagen --
-        IMAGES_DIR = '/home/ignrv/proyectos/Gunicorn/proyectoDesarrollo/imagenes/'
-        # Si envían un archivo
-        if "imagen" in request.FILES:
-            file_obj = request.FILES["imagen"]
-            filename = file_obj.name
-            save_path = os.path.join(IMAGES_DIR, filename)
-            # Creamos carpeta si no existe
-            os.makedirs(os.path.dirname(save_path), exist_ok=True)
-            # Guardamos en disco
-            with open(save_path, 'wb+') as dest:
-                for chunk in file_obj.chunks():
-                    dest.write(chunk)
-            # Insertamos ruta completa
-            data["imagen"] = save_path
-
-        # Si sólo envían nombre de fichero en JSON
-        elif data.get("imagen"):
-            basename = os.path.basename(data["imagen"])
-            data["imagen"] = os.path.join(IMAGES_DIR, basename)
-
         serializer = ModeloProductoSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1951,7 +1928,6 @@ class ModeloProductoCreateAPIView(APIView):
 
         return Response(ModeloProductoSerializer(modelo).data,
                         status=status.HTTP_201_CREATED)
-
 # ------------------------------------------------------------------------- #
 #  EDITAR MODELO DE PRODUCTO (PUT)                                           #
 # ------------------------------------------------------------------------- #
