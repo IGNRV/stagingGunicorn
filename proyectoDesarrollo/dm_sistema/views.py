@@ -17,7 +17,11 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import (
+    JSONParser,
+    MultiPartParser,
+    FormParser,
+)
 
 # ------------------------------------------------------------------ #
 # MODELOS Y SERIALIZERS                                              #
@@ -1859,41 +1863,24 @@ class ModeloProductoCreateAPIView(APIView):
     """
     POST /dm_sistema/logistica/modelo-producto/crear/
 
-    Body JSON:
-    {
-        "id_modelo_producto": <int>,
-        "id_empresa":         <int>,    # ahora opcional: si no se manda, se usará el de la sesión
-        "id_tipo_marca_producto": <int>,
-        "id_identificador_serie": <int>,
-        "id_unidad_medida":       <int>,
-        "codigo_interno":   "<str>",
-        "fccid":            "<str>",
-        "sku":              "<str>",
-        "sku_codigo":       "<str>",
-        "nombre_modelo":    "<str>",
-        "descripcion":      "<str>",
-        "imagen":           "<str>",
-        "estado":           <int>,
-        "producto_seriado": <int>,
-        "nombre_comercial": "<str>",
-        "despacho_express": <int>,
-        "rebaja_consumo":   <int>,
-        "dias_rebaja_consumo": <int>,
-        "orden_solicitud_despacho": <int>
-    }
-
-    Ahora `id_empresa` se toma del JSON si existe, y sólo si no:
-    se asigna la empresa del operador autenticado.
+    A partir de ahora se acepta el archivo de imagen mediante multipart/form-data:
+        - la clave debe ser **imagen_file** (no "imagen").
+        - todos los demás campos pueden ir como texto dentro del mismo FormData.
     """
     authentication_classes: list = []
     permission_classes:     list = []
 
+    # --- NUEVO: habilitamos los parsers para multipart/form-data -------- #
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
     def post(self, request, *args, **kwargs):
-        # 1) Verificación de token
+        # ------------------ 1. Verificación de cookie/token -------------- #
         token = request.COOKIES.get("auth_token")
         if not token:
-            return Response({"detail": "Token no proporcionado"},
-                            status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
         sesion = (
             SesionesActivas.objects
@@ -1902,8 +1889,10 @@ class ModeloProductoCreateAPIView(APIView):
             .first()
         )
         if not sesion:
-            return Response({"detail": "Token inválido o sesión expirada"},
-                            status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
         empresa = sesion.id_operador.id_empresa
         if not empresa or empresa.estado != 1:
@@ -1912,22 +1901,32 @@ class ModeloProductoCreateAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # 2) Normalizamos y preparamos data
-        data = _normalize_request_data(request.data)
-        # Permitimos que el cliente mande su propio id_empresa; si no, usamos el de la sesión:
-        if "id_empresa" not in data:
-            data["id_empresa"] = empresa.id
+        # ------------------ 2. Preparamos el payload --------------------- #
+        #   • Usamos `request.data` DIRECTAMENTE para no perder el file.
+        data = request.data.copy()
 
-        serializer = ModeloProductoSerializer(data=data)
+        # Si el cliente no envía id_empresa, usamos el de la sesión
+        data.setdefault("id_empresa", empresa.id)
+
+        # ------------------ 3. Serializamos & validamos ------------------ #
+        serializer = ModeloProductoSerializer(
+            data=data,
+            context={"request": request},
+        )
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # 3) Guardamos registro
+        # ------------------ 4. Guardamos transaccionalmente -------------- #
         with transaction.atomic():
             modelo = serializer.save()
 
-        return Response(ModeloProductoSerializer(modelo).data,
-                        status=status.HTTP_201_CREATED)
+        return Response(
+            ModeloProductoSerializer(modelo).data,
+            status=status.HTTP_201_CREATED,
+        )
 # ------------------------------------------------------------------------- #
 #  EDITAR MODELO DE PRODUCTO (PUT)                                           #
 # ------------------------------------------------------------------------- #

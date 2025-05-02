@@ -101,10 +101,20 @@ USE_I18N = True
 USE_L10N = True
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
+# --------------------------------------------------
+#  STATIC / MEDIA
+# --------------------------------------------------
 STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-MEDIA_URL = '/media/'
+
+#  Donde viven los estáticos **fuente** durante desarrollo
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),
+]
+
+#  Donde Django los recopila con «collectstatic» para producción
+STATIC_ROOT = os.path.join(BASE_DIR, 'static_root')
+
+MEDIA_URL  = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # ============================================
