@@ -135,3 +135,8 @@ REST_FRAMEWORK = {
     ),
 }
 
+# Directorio físico donde Django buscará/escribirá las imágenes
+MEDIA_ROOT = "/home/ignrv/proyectos/Gunicorn/proyectoDesarrollo/imagenes/"
+
+# URL pública a la que apuntará el navegador para pedir esas imágenes
+MEDIA_URL  = "/media/"

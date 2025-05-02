@@ -10,6 +10,7 @@ from dm_logistica.models import (
     MarcaProducto,
     TipoMarcaProducto,
     ModeloProducto,
+    IdentificadorSerie, 
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -110,3 +111,12 @@ class ModeloProductoCompletoSerializer(serializers.Serializer):
     rebaja_consumo          = serializers.IntegerField(allow_null=True)
     dias_rebaja_consumo     = serializers.IntegerField(allow_null=True)
     orden_solicitud_despacho= serializers.IntegerField(allow_null=True)
+
+class IdentificadorSerieSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = IdentificadorSerie
+        fields = [
+            "id", 
+            "nombre_serie",
+            "estado_serie",
+        ]

@@ -28,6 +28,7 @@ from dm_logistica.models import (
     MarcaProducto,      # ← NUEVO: insertar marca de producto
     TipoMarcaProducto,  # ← NUEVO: insertar tipo-marca de producto
     ModeloProducto,     # ← NUEVO: insertar modelo de producto
+    IdentificadorSerie,
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -44,6 +45,7 @@ from .serializer import (
     MarcaProductoSerializer,
     TipoMarcaProductoSerializer,
     ModeloProductoCompletoSerializer,
+    IdentificadorSerieSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -2295,3 +2297,44 @@ class ModeloProductoCompletoListAPIView(APIView):
 
         serializer = ModeloProductoCompletoSerializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  NUEVO ENDPOINT → LISTAR IDENTIFICADORES DE SERIE (GET)                   #
+# ------------------------------------------------------------------------- #
+class IdentificadorSerieListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/identificadores-serie/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros de `dm_logistica.identificador_serie`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        qs = IdentificadorSerie.objects.all().order_by("nombre_serie")
+        return Response(
+            IdentificadorSerieSerializer(qs, many=True).data,
+            status=status.HTTP_200_OK
+        )

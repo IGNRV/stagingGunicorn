@@ -49,6 +49,7 @@ from .views import (
     ComunaListAPIView,
     ComunaByRegionAPIView,
     RegionListAPIView,
+    IdentificadorSerieListAPIView,
 )
 
 urlpatterns = [
@@ -109,4 +110,10 @@ urlpatterns = [
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
     path("comunas/por-region/", ComunaByRegionAPIView.as_view(), name="comuna-por-region"),
     path("regiones/",           RegionListAPIView.as_view(),     name="region-listar"),
+    # -------- LOGÍSTICA – IDENTIFICADORES DE SERIE -------- #
+    path(
+        "logistica/identificadores-serie/",
+        IdentificadorSerieListAPIView.as_view(),
+        name="identificador-serie-listar"
+    ),
 ]
