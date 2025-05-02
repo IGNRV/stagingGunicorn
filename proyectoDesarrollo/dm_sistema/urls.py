@@ -43,13 +43,14 @@ from .views import (
     ModeloProductoUpdateAPIView,
     ModeloProductoDetailAPIView,
     # ----------------- NUEVO ENDPOINT ----------------- #
-    ModeloProductoCompletoListAPIView,   # ← import del nuevo endpoint
+    ModeloProductoCompletoListAPIView,
     # -------------------------------------------------- #
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
     RegionListAPIView,
     IdentificadorSerieListAPIView,
+    UnidadMedidaListAPIView,    # ← Ruta nueva para unidades de medida
 )
 
 urlpatterns = [
@@ -110,10 +111,11 @@ urlpatterns = [
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
     path("comunas/por-region/", ComunaByRegionAPIView.as_view(), name="comuna-por-region"),
     path("regiones/",           RegionListAPIView.as_view(),     name="region-listar"),
+
     # -------- LOGÍSTICA – IDENTIFICADORES DE SERIE -------- #
-    path(
-        "logistica/identificadores-serie/",
-        IdentificadorSerieListAPIView.as_view(),
-        name="identificador-serie-listar"
-    ),
+    path("logistica/identificadores-serie/", IdentificadorSerieListAPIView.as_view(), name="identificador-serie-listar"),
+
+    # -------- LOGÍSTICA – UNIDADES DE MEDIDA -------- #
+    path("logistica/unidades-medida/", UnidadMedidaListAPIView.as_view(), name="unidad-medida-listar"),
 ]
+

@@ -135,8 +135,14 @@ REST_FRAMEWORK = {
     ),
 }
 
-# Directorio físico donde Django buscará/escribirá las imágenes
-MEDIA_ROOT = "/home/ignrv/proyectos/Gunicorn/proyectoDesarrollo/imagenes/"
+# --------------------------------------------------------------------------- #
+#  STATIC & MEDIA                                                             #
+# --------------------------------------------------------------------------- #
+STATIC_URL   = "/static/"
+STATIC_ROOT  = BASE_DIR / "static"
 
-# URL pública a la que apuntará el navegador para pedir esas imágenes
-MEDIA_URL  = "/media/"
+#  ***  NUEVO  ***
+MEDIA_URL    = "/imagenes/"                                       # <-  URL pública
+MEDIA_ROOT   = BASE_DIR / "imagenes"                              # <-  carpeta en disco
+#  Asegúrate de que existan:
+os.makedirs(MEDIA_ROOT, exist_ok=True)

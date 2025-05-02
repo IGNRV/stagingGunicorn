@@ -7,6 +7,7 @@ import crypt
 import secrets
 import jwt
 import requests
+import os
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict
 
@@ -16,6 +17,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
 
 # ------------------------------------------------------------------ #
 # MODELOS Y SERIALIZERS                                              #
@@ -29,6 +31,7 @@ from dm_logistica.models import (
     TipoMarcaProducto,  # ← NUEVO: insertar tipo-marca de producto
     ModeloProducto,     # ← NUEVO: insertar modelo de producto
     IdentificadorSerie,
+    UnidadMedida,
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -46,6 +49,7 @@ from .serializer import (
     TipoMarcaProductoSerializer,
     ModeloProductoCompletoSerializer,
     IdentificadorSerieSerializer,
+    UnidadMedidaSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -1858,7 +1862,7 @@ class ModeloProductoCreateAPIView(APIView):
     Body JSON:
     {
         "id_modelo_producto": <int>,
-        "id_empresa":         <int>,    # ahora opcional: si no se manda, se usará el de la sesión
+        "id_empresa":         <int>,    # opcional: si no se manda, se usará el de la sesión
         "id_tipo_marca_producto": <int>,
         "id_identificador_serie": <int>,
         "id_unidad_medida":       <int>,
@@ -1868,7 +1872,7 @@ class ModeloProductoCreateAPIView(APIView):
         "sku_codigo":       "<str>",
         "nombre_modelo":    "<str>",
         "descripcion":      "<str>",
-        "imagen":           "<str>",
+        "imagen":           "<str> | file",  # ahora opcionalmente file
         "estado":           <int>,
         "producto_seriado": <int>,
         "nombre_comercial": "<str>",
@@ -1878,11 +1882,13 @@ class ModeloProductoCreateAPIView(APIView):
         "orden_solicitud_despacho": <int>
     }
 
-    Ahora `id_empresa` se toma del JSON si existe, y sólo si no:
-    se asigna la empresa del operador autenticado.
+    • Acepta `multipart/form-data` con un campo `imagen` file.
+    • Guarda la imagen en disco y en la tabla se inserta la ruta completa.
+    • Si sólo envían nombre, se prefija la ruta.
     """
     authentication_classes: list = []
     permission_classes:     list = []
+    parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request, *args, **kwargs):
         # 1) Verificación de token
@@ -1914,6 +1920,27 @@ class ModeloProductoCreateAPIView(APIView):
         if "id_empresa" not in data:
             data["id_empresa"] = empresa.id
 
+        # -- Manejo de la imagen --
+        IMAGES_DIR = '/home/ignrv/proyectos/Gunicorn/proyectoDesarrollo/imagenes/'
+        # Si envían un archivo
+        if "imagen" in request.FILES:
+            file_obj = request.FILES["imagen"]
+            filename = file_obj.name
+            save_path = os.path.join(IMAGES_DIR, filename)
+            # Creamos carpeta si no existe
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            # Guardamos en disco
+            with open(save_path, 'wb+') as dest:
+                for chunk in file_obj.chunks():
+                    dest.write(chunk)
+            # Insertamos ruta completa
+            data["imagen"] = save_path
+
+        # Si sólo envían nombre de fichero en JSON
+        elif data.get("imagen"):
+            basename = os.path.basename(data["imagen"])
+            data["imagen"] = os.path.join(IMAGES_DIR, basename)
+
         serializer = ModeloProductoSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1924,6 +1951,7 @@ class ModeloProductoCreateAPIView(APIView):
 
         return Response(ModeloProductoSerializer(modelo).data,
                         status=status.HTTP_201_CREATED)
+
 # ------------------------------------------------------------------------- #
 #  EDITAR MODELO DE PRODUCTO (PUT)                                           #
 # ------------------------------------------------------------------------- #
@@ -2336,5 +2364,46 @@ class IdentificadorSerieListAPIView(APIView):
         qs = IdentificadorSerie.objects.all().order_by("nombre_serie")
         return Response(
             IdentificadorSerieSerializer(qs, many=True).data,
+            status=status.HTTP_200_OK
+        )
+# ------------------------------------------------------------------------- #
+#  NUEVO ENDPOINT → LISTAR UNIDADES DE MEDIDA (GET)                         #
+# ------------------------------------------------------------------------- #
+class UnidadMedidaListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/unidades-medida/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros de `dm_logistica.unidad_medida`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        qs = UnidadMedida.objects.all().order_by("nombre_unidad_medida")
+        return Response(
+            UnidadMedidaSerializer(qs, many=True).data,
             status=status.HTTP_200_OK
         )

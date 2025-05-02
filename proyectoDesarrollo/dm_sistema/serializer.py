@@ -10,7 +10,8 @@ from dm_logistica.models import (
     MarcaProducto,
     TipoMarcaProducto,
     ModeloProducto,
-    IdentificadorSerie, 
+    IdentificadorSerie,
+    UnidadMedida,                # ← Import agregado
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -116,7 +117,15 @@ class IdentificadorSerieSerializer(serializers.ModelSerializer):
     class Meta:
         model = IdentificadorSerie
         fields = [
-            "id", 
+            "id",
             "nombre_serie",
             "estado_serie",
         ]
+
+# ------------------------------------------------------------------------- #
+#  NUEVO SERIALIZER → UNIDADES DE MEDIDA                                   #
+# ------------------------------------------------------------------------- #
+class UnidadMedidaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UnidadMedida
+        fields = "__all__"
