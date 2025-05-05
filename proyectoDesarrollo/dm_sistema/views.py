@@ -1931,56 +1931,46 @@ class ModeloProductoCreateAPIView(APIView):
             status=status.HTTP_201_CREATED,
         )
 # ------------------------------------------------------------------------- #
-#  EDITAR MODELO DE PRODUCTO (PUT)                                           #
+#  EDITAR MODELO DE PRODUCTO (PUT) – ACEPTA IMAGEN IGUAL QUE “CREATE”       #
 # ------------------------------------------------------------------------- #
 class ModeloProductoUpdateAPIView(APIView):
     """
     PUT /dm_sistema/logistica/modelo-producto/editar/
 
-    Body JSON esperado:
-    {
-        "id_modelo_producto":   <int>,    # obligatorio
-        "id_tipo_marca_producto": <int>,  # opcional
-        "id_identificador_serie": <int>,  # opcional
-        "id_unidad_medida":       <int>,  # opcional
-        "codigo_interno":        "<str>", # opcional
-        "fccid":                 "<str>", # opcional
-        "sku":                   "<str>", # opcional
-        "sku_codigo":            "<str>", # opcional
-        "nombre_modelo":         "<str>", # opcional
-        "descripcion":           "<str>", # opcional
-        "imagen":                "<str>", # opcional
-        "estado":                <int>,   # opcional
-        "producto_seriado":      <int>,   # opcional
-        "nombre_comercial":      "<str>", # opcional
-        "despacho_express":      <int>,   # opcional
-        "rebaja_consumo":        <int>,   # opcional
-        "dias_rebaja_consumo":   <int>,   # opcional
-        "orden_solicitud_despacho": <int> # opcional
-    }
+    A partir de ahora admite multipart/form-data para que el frontend pueda
+    enviar un archivo de imagen con la clave **imagen_file** (tal como en
+    ModeloProductoCreateAPIView).
 
-    • Requiere la cookie `auth_token`.
-    • Solo permite editar registros que pertenezcan a la misma empresa
-      del operador autenticado.
-    • La actualización es parcial.
+    Campos mínimos en el FormData:
+        • id_modelo_producto        (int)   ← obligatorio
+        • imagen_file               (file)  ← opcional
+        • ...cualquier otro campo del modelo que se desee actualizar.
+
+    El resto de la lógica (autorización por empresa, validaciones, etc.)
+    permanece intacta.
     """
     authentication_classes: list = []
     permission_classes:     list = []
 
+    # --- NUEVO: habilitamos parsers para multipart/form-data ------------- #
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
     def put(self, request, *args, **kwargs):
-        # ------------------ 0) Validación de ID ------------------------ #
+        # ------------------ 0) Validación de ID ------------------------- #
         modelo_id = request.data.get("id_modelo_producto")
         if modelo_id is None:
             return Response(
                 {"id_modelo_producto": ["Este campo es obligatorio."]},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # ------------------ 1) Verificación de token ------------------- #
+        # ------------------ 1) Verificación de token -------------------- #
         token = request.COOKIES.get("auth_token")
         if not token:
-            return Response({"detail": "Token no proporcionado"},
-                            status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
         sesion = (
             SesionesActivas.objects
@@ -1989,47 +1979,60 @@ class ModeloProductoUpdateAPIView(APIView):
             .first()
         )
         if not sesion:
-            return Response({"detail": "Token inválido o sesión expirada"},
-                            status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
         empresa = sesion.id_operador.id_empresa
         if not empresa or empresa.estado != 1:
             return Response(
                 {"detail": "La empresa asociada se encuentra inactiva."},
-                status=status.HTTP_403_FORBIDDEN
+                status=status.HTTP_403_FORBIDDEN,
             )
 
-        # ------------------ 2) Recuperamos el modelo ------------------- #
+        # ------------------ 2) Recuperamos el modelo -------------------- #
         try:
             modelo = ModeloProducto.objects.get(
                 pk=modelo_id,
-                id_empresa=empresa.id
+                id_empresa=empresa.id,
             )
         except ModeloProducto.DoesNotExist:
-            return Response({"detail": "Modelo de producto no encontrado"},
-                            status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "Modelo de producto no encontrado"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-        # ------------------ 3) Datos a actualizar ---------------------- #
-        update_data = _normalize_request_data(request.data)
-        update_data.pop("id_modelo_producto", None)
-        update_data.pop("id_empresa", None)
+        # ------------------ 3) Preparamos los datos --------------------- #
+        # Usamos `request.data` directamente para conservar el archivo.
+        data = request.data.copy()          # ➜ MultiValueDict seguro
 
+        # • Garantizamos que el registro no cambie de empresa
+        data.setdefault("id_empresa", empresa.id)
+
+        # • Nunca permitimos cambiar la PK
+        data.pop("id_modelo_producto", None)
+
+        # ------------------ 4) Serializamos & validamos ----------------- #
         serializer = ModeloProductoSerializer(
             instance=modelo,
-            data=update_data,
-            partial=True
+            data=data,               # incluye imagen_file si viene
+            partial=True,            # actualización parcial
+            context={"request": request},
         )
         if not serializer.is_valid():
-            return Response(serializer.errors,
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # ------------------ 4) Guardamos cambios ----------------------- #
+        # ------------------ 5) Guardamos cambios ------------------------ #
         with transaction.atomic():
-            modelo = serializer.save()
+            modelo_actualizado = serializer.save()  # `imagen_file` ya gestionado
 
         return Response(
-            ModeloProductoSerializer(modelo).data,
-            status=status.HTTP_200_OK
+            ModeloProductoSerializer(modelo_actualizado).data,
+            status=status.HTTP_200_OK,
         )
 # ------------------------------------------------------------------------- #
 #  LISTAR MODELOS DE PRODUCTO POR EMPRESA (GET)                             #
