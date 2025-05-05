@@ -10,10 +10,8 @@ urlpatterns = [
     path('dm_sistema/', include('dm_sistema.urls')),
 ]
 
-# ──────────────────────────────────────────────────────────────
-#  Solo en desarrollo (DEBUG=True) Django servirá estáticos.
-#  En producción los sirve Nginx, pero dejamos esto para tests.
-# ──────────────────────────────────────────────────────────────
-if settings.DEBUG:
-    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
-    urlpatterns += static(settings.MEDIA_URL,  document_root=settings.MEDIA_ROOT)
+# ---------------------------   NUEVO / EDITADO   ---------------------------- #
+#  • En producción (Gunicorn + Nginx) **NO** se usa este helper, pero
+#    mantenerlo no afecta – sirve para entornos de prueba/local.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# ---------------------------------------------------------------------------- #
