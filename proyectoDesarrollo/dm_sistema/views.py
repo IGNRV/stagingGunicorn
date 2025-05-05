@@ -56,6 +56,7 @@ from .serializer import (
     ModeloProductoCompletoDetalleSerializer,
     IdentificadorSerieSerializer,
     UnidadMedidaSerializer,
+    TipoMarcaProductoJoinSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -2526,4 +2527,97 @@ class ModeloProductoCompletoDetailAPIView(APIView):
 
         # Serializamos la respuesta
         serializer = ModeloProductoCompletoDetalleSerializer(data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★ NUEVO ENDPOINT – DETALLE JOIN TIPO‑MARCA‑PRODUCTO (POST)               #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoJoinDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/tipo-marca-producto-completo/
+
+    Body JSON:
+    {
+        "id_tipo_marca_producto": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve la fila de la relación tipo‑marca con los datos descriptivos
+      del tipo y la marca filtrados por la empresa del operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ---------------- 0) Validación de body ------------------------- #
+        registro_id = request.data.get("id_tipo_marca_producto")
+        if registro_id is None:
+            return Response(
+                {"id_tipo_marca_producto": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ---------------- 1) Verificación de token ---------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ---------------- 2) Ejecutamos la query ------------------------ #
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    tmp.id,
+                    tmp.id_empresa,
+                    tp.codigo_tipo_producto,
+                    tp.nombre_tipo_producto,
+                    mp.nombre_marca_producto
+                FROM dm_logistica.tipo_marca_producto  AS tmp
+                JOIN dm_logistica.tipo_producto        AS tp
+                  ON tp.id = tmp.id_tipo_producto
+                JOIN dm_logistica.marca_producto       AS mp
+                  ON mp.id = tmp.id_marca_producto
+                WHERE tmp.id_empresa = %s
+                  AND tmp.id = %s
+                """,
+                [empresa.id, registro_id],
+            )
+            row = cursor.fetchone()
+
+        if not row:
+            return Response(
+                {"detail": "Registro no encontrado"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        data = {
+            "id_tipo_marca_producto": row[0],
+            "id_empresa":             row[1],
+            "codigo_tipo_producto":   row[2],
+            "nombre_tipo_producto":   row[3],
+            "nombre_marca_producto":  row[4],
+        }
+
+        serializer = TipoMarcaProductoJoinSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)

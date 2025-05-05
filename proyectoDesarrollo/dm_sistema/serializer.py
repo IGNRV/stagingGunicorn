@@ -11,11 +11,14 @@ from dm_logistica.models import (
     TipoMarcaProducto,
     ModeloProducto,
     IdentificadorSerie,
-    UnidadMedida,                # ← Import agregado
+    UnidadMedida,
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
 
+# ------------------------------------------------------------------------- #
+#  SERIALIZERS EXISTENTES PARA LOGIN, BODEGAS, LOGÍSTICA, ETC.              #
+# ------------------------------------------------------------------------- #
 class OperadorLoginSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=50, trim_whitespace=True)
     password = serializers.CharField(max_length=128, write_only=True)
@@ -92,6 +95,9 @@ class RegionSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+# ------------------------------------------------------------------------- #
+#  BODEGAS “COMPLETAS” (JOIN)                                               #
+# ------------------------------------------------------------------------- #
 class BodegaCompletaSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     id_empresa = serializers.IntegerField()
@@ -99,8 +105,9 @@ class BodegaCompletaSerializer(serializers.Serializer):
     estado_bodega = serializers.IntegerField()
     nombre_bodega = serializers.CharField()
 
+
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZER PARA EL ENDPOINT DE MODELOS “COMPLETOS”                #
+#  MODELO PRODUCTO – JOIN COMPLETO (sin imagen)                             #
 # ------------------------------------------------------------------------- #
 class ModeloProductoCompletoSerializer(serializers.Serializer):
     id_modelo_producto      = serializers.IntegerField()
@@ -125,8 +132,9 @@ class ModeloProductoCompletoSerializer(serializers.Serializer):
     dias_rebaja_consumo     = serializers.IntegerField(allow_null=True)
     orden_solicitud_despacho= serializers.IntegerField(allow_null=True)
 
+
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZER PARA EL DETALLE + IMAGEN BASE64                         #
+#  MODELO PRODUCTO – JOIN + IMAGEN BASE64                                   #
 # ------------------------------------------------------------------------- #
 class ModeloProductoCompletoDetalleSerializer(ModeloProductoCompletoSerializer):
     """
@@ -135,6 +143,9 @@ class ModeloProductoCompletoDetalleSerializer(ModeloProductoCompletoSerializer):
     imagen_base64 = serializers.CharField(allow_null=True, read_only=True)
 
 
+# ------------------------------------------------------------------------- #
+#  IDENTIFICADOR DE SERIE & UNIDAD DE MEDIDA                                #
+# ------------------------------------------------------------------------- #
 class IdentificadorSerieSerializer(serializers.ModelSerializer):
     class Meta:
         model = IdentificadorSerie
@@ -144,10 +155,23 @@ class IdentificadorSerieSerializer(serializers.ModelSerializer):
             "estado_serie",
         ]
 
-# ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZER → UNIDADES DE MEDIDA                                   #
-# ------------------------------------------------------------------------- #
+
 class UnidadMedidaSerializer(serializers.ModelSerializer):
     class Meta:
         model = UnidadMedida
         fields = "__all__"
+
+
+# ------------------------------------------------------------------------- #
+#  NUEVO SERIALIZER → JOIN TIPO‑MARCA‑PRODUCTO                              #
+# ------------------------------------------------------------------------- #
+class TipoMarcaProductoJoinSerializer(serializers.Serializer):
+    """
+    Devuelve la fila de dm_logistica.tipo_marca_producto con los datos
+    descriptivos del tipo y la marca de producto.
+    """
+    id_tipo_marca_producto = serializers.IntegerField()
+    id_empresa             = serializers.IntegerField()
+    codigo_tipo_producto   = serializers.CharField()
+    nombre_tipo_producto   = serializers.CharField()
+    nombre_marca_producto  = serializers.CharField()

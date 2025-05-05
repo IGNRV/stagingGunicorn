@@ -44,14 +44,16 @@ from .views import (
     ModeloProductoDetailAPIView,
     # ----------------- NUEVO ENDPOINTS ----------------- #
     ModeloProductoCompletoListAPIView,
-    ModeloProductoCompletoDetailAPIView,  # ← import nuevo
+    ModeloProductoCompletoDetailAPIView,
+    # -------- NUEVO (★) JOIN TIPO‑MARCA‑PRODUCTO -------- #
+    TipoMarcaProductoJoinDetailAPIView,
     # -------------------------------------------------- #
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
     RegionListAPIView,
     IdentificadorSerieListAPIView,
-    UnidadMedidaListAPIView,    # ← Ruta nueva para unidades de medida
+    UnidadMedidaListAPIView,
 )
 
 urlpatterns = [
@@ -98,6 +100,13 @@ urlpatterns = [
     path("logistica/tipo-marca-producto/editar/",  TipoMarcaProductoUpdateAPIView.as_view(),  name="tipo-marca-producto-editar"),
     path("logistica/tipo-marca-producto/detalle/", TipoMarcaProductoDetailAPIView.as_view(),  name="tipo-marca-producto-detalle"),
     path("logistica/tipo-marca-producto/eliminar/", TipoMarcaProductoDeleteAPIView.as_view(),   name="tipo-marca-producto-eliminar"),
+
+    # ---------- ★ NUEVO ENDPOINT – JOIN TIPO‑MARCA‑PRODUCTO ------------- #
+    path(
+        "logistica/tipo-marca-producto-completo/",
+        TipoMarcaProductoJoinDetailAPIView.as_view(),
+        name="tipo-marca-producto-completo-detalle",
+    ),
 
     # --------------------------- LOGÍSTICA – MODELO PRODUCTO ----------- #
     path("logistica/modelo-producto/crear/",   ModeloProductoCreateAPIView.as_view(),   name="modelo-producto-crear"),
