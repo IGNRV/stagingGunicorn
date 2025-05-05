@@ -42,8 +42,9 @@ from .views import (
     ModeloProductoListAPIView,
     ModeloProductoUpdateAPIView,
     ModeloProductoDetailAPIView,
-    # ----------------- NUEVO ENDPOINT ----------------- #
+    # ----------------- NUEVO ENDPOINTS ----------------- #
     ModeloProductoCompletoListAPIView,
+    ModeloProductoCompletoDetailAPIView,  # ← import nuevo
     # -------------------------------------------------- #
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
@@ -99,13 +100,14 @@ urlpatterns = [
     path("logistica/tipo-marca-producto/eliminar/", TipoMarcaProductoDeleteAPIView.as_view(),   name="tipo-marca-producto-eliminar"),
 
     # --------------------------- LOGÍSTICA – MODELO PRODUCTO ----------- #
-    path("logistica/modelo-producto/crear/", ModeloProductoCreateAPIView.as_view(), name="modelo-producto-crear"),
-    path("logistica/modelo-producto/",       ModeloProductoListAPIView.as_view(),   name="modelo-producto-listar"),
-    path("logistica/modelo-producto/editar/",ModeloProductoUpdateAPIView.as_view(), name="modelo-producto-editar"),
-    path("logistica/modelo-producto/detalle/",ModeloProductoDetailAPIView.as_view(), name="modelo-producto-detalle"),
+    path("logistica/modelo-producto/crear/",   ModeloProductoCreateAPIView.as_view(),   name="modelo-producto-crear"),
+    path("logistica/modelo-producto/",         ModeloProductoListAPIView.as_view(),     name="modelo-producto-listar"),
+    path("logistica/modelo-producto/editar/",  ModeloProductoUpdateAPIView.as_view(),   name="modelo-producto-editar"),
+    path("logistica/modelo-producto/detalle/", ModeloProductoDetailAPIView.as_view(),   name="modelo-producto-detalle"),
 
-    # ---------------------- NUEVO ENDPOINT MODELOS COMPLETOS ------------ #
-    path("logistica/modelos-producto-completos/", ModeloProductoCompletoListAPIView.as_view(), name="modelo-producto-completo-listar"),
+    # ---------------------- NUEVOS ENDPOINTS ---------------------------- #
+    path("logistica/modelos-producto-completos/", ModeloProductoCompletoListAPIView.as_view(),   name="modelo-producto-completo-listar"),
+    path("logistica/modelo-producto-completo/",   ModeloProductoCompletoDetailAPIView.as_view(), name="modelo-producto-completo-detalle"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
@@ -118,4 +120,3 @@ urlpatterns = [
     # -------- LOGÍSTICA – UNIDADES DE MEDIDA -------- #
     path("logistica/unidades-medida/", UnidadMedidaListAPIView.as_view(), name="unidad-medida-listar"),
 ]
-

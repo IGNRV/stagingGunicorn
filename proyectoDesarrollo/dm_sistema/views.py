@@ -8,6 +8,7 @@ import secrets
 import jwt
 import requests
 import os
+import base64
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict
 
@@ -52,6 +53,7 @@ from .serializer import (
     MarcaProductoSerializer,
     TipoMarcaProductoSerializer,
     ModeloProductoCompletoSerializer,
+    ModeloProductoCompletoDetalleSerializer,
     IdentificadorSerieSerializer,
     UnidadMedidaSerializer,
 )
@@ -2382,3 +2384,146 @@ class UnidadMedidaListAPIView(APIView):
             UnidadMedidaSerializer(qs, many=True).data,
             status=status.HTTP_200_OK
         )
+# ------------------------------------------------------------------------- #
+#  NUEVO ENDPOINT → DETALLE MODELO “COMPLETO” CON IMAGEN                    #
+# ------------------------------------------------------------------------- #
+class ModeloProductoCompletoDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/modelo-producto-completo/
+
+    Body JSON:
+    {
+        "id_modelo_producto": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve el registro solicitado (JOINs) **más** la imagen codificada
+      en base64; si el archivo no existe se retorna `null` en `imagen_base64`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ---------------- 0) Validación de body ------------------------ #
+        modelo_id = request.data.get("id_modelo_producto")
+        if modelo_id is None:
+            return Response(
+                {"id_modelo_producto": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ---------------- 1) Verificación de token --------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ---------------- 2) Ejecutamos la query ----------------------- #
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                    mp.id_modelo_producto,
+                    mp.id_empresa,
+                    tp.codigo_tipo_producto,
+                    tp.nombre_tipo_producto,
+                    mpd.nombre_marca_producto,
+                    um.nombre_unidad_medida,
+                    mp.id_identificador_serie,
+                    mp.codigo_interno,
+                    mp.fccid,
+                    mp.sku,
+                    mp.sku_codigo,
+                    mp.nombre_modelo,
+                    mp.descripcion,
+                    mp.imagen,
+                    mp.estado,
+                    mp.producto_seriado,
+                    mp.nombre_comercial,
+                    mp.despacho_express,
+                    mp.rebaja_consumo,
+                    mp.dias_rebaja_consumo,
+                    mp.orden_solicitud_despacho
+                FROM dm_logistica.modelo_producto AS mp
+                JOIN dm_logistica.tipo_marca_producto AS tmp
+                  ON mp.id_tipo_marca_producto = tmp.id
+                JOIN dm_logistica.tipo_producto AS tp
+                  ON tmp.id_tipo_producto = tp.id
+                JOIN dm_logistica.marca_producto AS mpd
+                  ON tmp.id_marca_producto = mpd.id
+                JOIN dm_logistica.unidad_medida AS um
+                  ON mp.id_unidad_medida = um.id
+                WHERE mp.id_empresa = %s
+                  AND mp.id_modelo_producto = %s
+                """, [empresa.id, modelo_id])
+            row = cursor.fetchone()
+
+        if not row:
+            return Response(
+                {"detail": "Modelo de producto no encontrado"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        data = {
+            "id_modelo_producto":       row[0],
+            "id_empresa":               row[1],
+            "codigo_tipo_producto":     row[2],
+            "nombre_tipo_producto":     row[3],
+            "nombre_marca_producto":    row[4],
+            "nombre_unidad_medida":     row[5],
+            "id_identificador_serie":   row[6],
+            "codigo_interno":           row[7],
+            "fccid":                    row[8],
+            "sku":                      row[9],
+            "sku_codigo":               row[10],
+            "nombre_modelo":            row[11],
+            "descripcion":              row[12],
+            "imagen":                   row[13],
+            "estado":                   row[14],
+            "producto_seriado":         row[15],
+            "nombre_comercial":         row[16],
+            "despacho_express":         row[17],
+            "rebaja_consumo":           row[18],
+            "dias_rebaja_consumo":      row[19],
+            "orden_solicitud_despacho": row[20],
+        }
+
+        # ---------------- 3) Leemos la imagen -------------------------- #
+        img_b64: str | None = None
+        if data["imagen"]:
+            # Ruta absoluta: BASE_DIR + imagen sin slash inicial
+            abs_path = os.path.join(
+                str(settings.BASE_DIR),
+                data["imagen"].lstrip("/"),
+            )
+            try:
+                with open(abs_path, "rb") as f:
+                    img_b64 = base64.b64encode(f.read()).decode("utf-8")
+            except FileNotFoundError:
+                img_b64 = None
+
+        data["imagen_base64"] = img_b64
+
+        # Serializamos la respuesta
+        serializer = ModeloProductoCompletoDetalleSerializer(data)
+        return Response(serializer.data, status=status.HTTP_200_OK)

@@ -15,18 +15,22 @@ from dm_logistica.models import (
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
+
 class OperadorLoginSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=50, trim_whitespace=True)
     password = serializers.CharField(max_length=128, write_only=True)
+
 
 class OperadorVerificarSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=50, trim_whitespace=True)
     cod_verificacion = serializers.CharField(max_length=255, trim_whitespace=True)
 
+
 class OperadorSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Operador
         fields = "__all__"
+
 
 class ProveedorSerializer(serializers.ModelSerializer):
     class Meta:
@@ -38,15 +42,18 @@ class ProveedorSerializer(serializers.ModelSerializer):
             "direccion", "id_comuna", "id_region", "proveedor_unico",
         ]
 
+
 class BodegaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Bodega
         fields = "__all__"
 
+
 class BodegaTipoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = BodegaTipo
         fields = "__all__"
+
 
 class TipoProductoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -56,12 +63,14 @@ class TipoProductoSerializer(serializers.ModelSerializer):
             "estado", "correlativo_desde", "correlativo_hasta",
         ]
 
+
 class MarcaProductoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = MarcaProducto
         fields = [
             "id", "id_empresa", "nombre_marca_producto", "estado",
         ]
+
 
 class TipoMarcaProductoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -70,15 +79,18 @@ class TipoMarcaProductoSerializer(serializers.ModelSerializer):
             "id", "id_empresa", "id_tipo_producto", "id_marca_producto",
         ]
 
+
 class ComunaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Comuna
         fields = "__all__"
 
+
 class RegionSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Region
         fields = "__all__"
+
 
 class BodegaCompletaSerializer(serializers.Serializer):
     id = serializers.IntegerField()
@@ -112,6 +124,16 @@ class ModeloProductoCompletoSerializer(serializers.Serializer):
     rebaja_consumo          = serializers.IntegerField(allow_null=True)
     dias_rebaja_consumo     = serializers.IntegerField(allow_null=True)
     orden_solicitud_despacho= serializers.IntegerField(allow_null=True)
+
+# ------------------------------------------------------------------------- #
+#  NUEVO SERIALIZER PARA EL DETALLE + IMAGEN BASE64                         #
+# ------------------------------------------------------------------------- #
+class ModeloProductoCompletoDetalleSerializer(ModeloProductoCompletoSerializer):
+    """
+    Extiende el serializer anterior agregando la imagen codificada en base64.
+    """
+    imagen_base64 = serializers.CharField(allow_null=True, read_only=True)
+
 
 class IdentificadorSerieSerializer(serializers.ModelSerializer):
     class Meta:
