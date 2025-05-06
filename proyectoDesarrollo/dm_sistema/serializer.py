@@ -118,7 +118,6 @@ class ModeloProductoCompletoSerializer(serializers.Serializer):
     nombre_unidad_medida    = serializers.CharField()
     id_identificador_serie  = serializers.IntegerField()
     codigo_interno          = serializers.CharField(allow_null=True, allow_blank=True)
-    fccid                   = serializers.CharField(allow_null=True, allow_blank=True)
     sku                     = serializers.CharField(allow_null=True, allow_blank=True)
     sku_codigo              = serializers.CharField(allow_null=True, allow_blank=True)
     nombre_modelo           = serializers.CharField()

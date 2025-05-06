@@ -2238,7 +2238,7 @@ class ModeloProductoCompletoListAPIView(APIView):
             return Response({"detail": "La empresa asociada se encuentra inactiva."},
                             status=status.HTTP_403_FORBIDDEN)
 
-        # Ejecutamos la consulta con JOINs y filtrado por id_empresa
+        # -------------------- CONSULTA ACTUALIZADA (sin fccid) -------------------- #
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT
@@ -2250,7 +2250,6 @@ class ModeloProductoCompletoListAPIView(APIView):
                     um.nombre_unidad_medida,
                     mp.id_identificador_serie,
                     mp.codigo_interno,
-                    mp.fccid,
                     mp.sku,
                     mp.sku_codigo,
                     mp.nombre_modelo,
@@ -2287,19 +2286,18 @@ class ModeloProductoCompletoListAPIView(APIView):
                 "nombre_unidad_medida":     row[5],
                 "id_identificador_serie":   row[6],
                 "codigo_interno":           row[7],
-                "fccid":                    row[8],
-                "sku":                      row[9],
-                "sku_codigo":               row[10],
-                "nombre_modelo":            row[11],
-                "descripcion":              row[12],
-                "imagen":                   row[13],
-                "estado":                   row[14],
-                "producto_seriado":         row[15],
-                "nombre_comercial":         row[16],
-                "despacho_express":         row[17],
-                "rebaja_consumo":           row[18],
-                "dias_rebaja_consumo":      row[19],
-                "orden_solicitud_despacho": row[20],
+                "sku":                      row[8],
+                "sku_codigo":               row[9],
+                "nombre_modelo":            row[10],
+                "descripcion":              row[11],
+                "imagen":                   row[12],
+                "estado":                   row[13],
+                "producto_seriado":         row[14],
+                "nombre_comercial":         row[15],
+                "despacho_express":         row[16],
+                "rebaja_consumo":           row[17],
+                "dias_rebaja_consumo":      row[18],
+                "orden_solicitud_despacho": row[19],
             }
             for row in rows
         ]
@@ -2443,7 +2441,7 @@ class ModeloProductoCompletoDetailAPIView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        # ---------------- 2) Ejecutamos la query ----------------------- #
+        # ---------------- 2) CONSULTA ACTUALIZADA (sin fccid) ----------- #
         with connection.cursor() as cursor:
             cursor.execute("""
                 SELECT
@@ -2455,7 +2453,6 @@ class ModeloProductoCompletoDetailAPIView(APIView):
                     um.nombre_unidad_medida,
                     mp.id_identificador_serie,
                     mp.codigo_interno,
-                    mp.fccid,
                     mp.sku,
                     mp.sku_codigo,
                     mp.nombre_modelo,
@@ -2497,25 +2494,23 @@ class ModeloProductoCompletoDetailAPIView(APIView):
             "nombre_unidad_medida":     row[5],
             "id_identificador_serie":   row[6],
             "codigo_interno":           row[7],
-            "fccid":                    row[8],
-            "sku":                      row[9],
-            "sku_codigo":               row[10],
-            "nombre_modelo":            row[11],
-            "descripcion":              row[12],
-            "imagen":                   row[13],
-            "estado":                   row[14],
-            "producto_seriado":         row[15],
-            "nombre_comercial":         row[16],
-            "despacho_express":         row[17],
-            "rebaja_consumo":           row[18],
-            "dias_rebaja_consumo":      row[19],
-            "orden_solicitud_despacho": row[20],
+            "sku":                      row[8],
+            "sku_codigo":               row[9],
+            "nombre_modelo":            row[10],
+            "descripcion":              row[11],
+            "imagen":                   row[12],
+            "estado":                   row[13],
+            "producto_seriado":         row[14],
+            "nombre_comercial":         row[15],
+            "despacho_express":         row[16],
+            "rebaja_consumo":           row[17],
+            "dias_rebaja_consumo":      row[18],
+            "orden_solicitud_despacho": row[19],
         }
 
-        # ---------------- 3) Leemos la imagen -------------------------- #
+        # ---------------- 3) Cargamos imagen --------------------------- #
         img_b64: str | None = None
         if data["imagen"]:
-            # Ruta absoluta: BASE_DIR + imagen sin slash inicial
             abs_path = os.path.join(
                 str(settings.BASE_DIR),
                 data["imagen"].lstrip("/"),
@@ -2528,7 +2523,6 @@ class ModeloProductoCompletoDetailAPIView(APIView):
 
         data["imagen_base64"] = img_b64
 
-        # Serializamos la respuesta
         serializer = ModeloProductoCompletoDetalleSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
 # ------------------------------------------------------------------------- #

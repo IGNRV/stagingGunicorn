@@ -256,13 +256,12 @@ class MarcaProducto(models.Model):
 
 
 class ModeloProducto(models.Model):
-    id_modelo_producto = models.IntegerField(primary_key=True)
+    id_modelo_producto = models.IntegerField(primary_key=True)  # The composite primary key (id_modelo_producto, id_empresa) found, that is not supported. The first column is selected.
     id_empresa = models.IntegerField()
     id_tipo_marca_producto = models.ForeignKey('TipoMarcaProducto', models.DO_NOTHING, db_column='id_tipo_marca_producto')
     id_identificador_serie = models.ForeignKey(IdentificadorSerie, models.DO_NOTHING, db_column='id_identificador_serie')
     id_unidad_medida = models.ForeignKey('UnidadMedida', models.DO_NOTHING, db_column='id_unidad_medida')
     codigo_interno = models.CharField(max_length=50, blank=True, null=True)
-    fccid = models.CharField(max_length=50, blank=True, null=True)
     sku = models.CharField(max_length=255, blank=True, null=True)
     sku_codigo = models.CharField(max_length=255, blank=True, null=True)
     nombre_modelo = models.CharField(max_length=100)
@@ -382,10 +381,10 @@ class ProductoBodega(models.Model):
     id_bodega = models.ForeignKey(Bodega, models.DO_NOTHING, db_column='id_bodega')
     id_modelo_producto = models.ForeignKey(ModeloProducto, models.DO_NOTHING, db_column='id_modelo_producto')
     id_estado_producto = models.ForeignKey(EstadoProducto, models.DO_NOTHING, db_column='id_estado_producto')
-    id_producto_bodega_pack = models.ForeignKey('self', models.DO_NOTHING, db_column='id_producto_bodega_pack', blank=True, null=True)
+    id_producto_bodega_pack = models.IntegerField(blank=True, null=True)
     lote = models.CharField(max_length=50, blank=True, null=True)
     cantidad_original = models.FloatField()
-    id_producto_bodega_origen = models.ForeignKey('self', models.DO_NOTHING, db_column='id_producto_bodega_origen', related_name='productobodega_id_producto_bodega_origen_set')
+    id_producto_bodega_origen = models.IntegerField()
     cantidad_actual = models.FloatField()
     fecha_registro = models.DateTimeField()
     ubicacion = models.CharField(max_length=255, blank=True, null=True)
@@ -511,7 +510,7 @@ class SolicitudCompra(models.Model):
     ruta_file = models.CharField(max_length=255, blank=True, null=True)
     cod_presupuesto = models.CharField(max_length=10, blank=True, null=True)
     id_punto_venta = models.IntegerField(blank=True, null=True)
-    operador_rechazo = models.CharField(max_length=50, blank=True, null=True)
+    operador_rechazo = models.IntegerField(blank=True, null=True)
     fecha_rechazo = models.DateTimeField(blank=True, null=True)
     motivo_rechazo = models.TextField(blank=True, null=True)
     id_requerimiento = models.IntegerField(blank=True, null=True)

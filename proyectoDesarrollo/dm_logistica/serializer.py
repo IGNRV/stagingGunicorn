@@ -50,7 +50,6 @@ class ModeloProductoSerializer(serializers.ModelSerializer):
             "id_unidad_medida",
             # ------------------------ DATOS ---------------------------- #
             "codigo_interno",
-            "fccid",
             "sku",
             "sku_codigo",
             "nombre_modelo",
