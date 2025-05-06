@@ -174,3 +174,17 @@ class TipoMarcaProductoJoinSerializer(serializers.Serializer):
     codigo_tipo_producto   = serializers.CharField()
     nombre_tipo_producto   = serializers.CharField()
     nombre_marca_producto  = serializers.CharField()
+
+
+# ------------------------------------------------------------------------- #
+#  --- NUEVO ENDPOINT ATRIBUTOS ------------------------------------------ #
+# ------------------------------------------------------------------------- #
+class ModeloProductoAtributoSerializer(serializers.Serializer):
+    """
+    Serializer para la respuesta del endpoint que entrega
+    los atributos asociados a un modelo de producto.
+    """
+    id_modelo_producto = serializers.IntegerField()
+    id_empresa         = serializers.IntegerField()
+    atributo_id        = serializers.IntegerField()
+    nombre_atributo    = serializers.CharField()

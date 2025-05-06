@@ -48,6 +48,8 @@ from .views import (
     # -------- NUEVO (★) JOIN TIPO‑MARCA‑PRODUCTO -------- #
     TipoMarcaProductoJoinDetailAPIView,
     # -------------------------------------------------- #
+    # -------- NUEVO ENDPOINT ATRIBUTOS ----------------- #
+    ModeloProductoAtributosAPIView,
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -117,6 +119,13 @@ urlpatterns = [
     # ---------------------- NUEVOS ENDPOINTS ---------------------------- #
     path("logistica/modelos-producto-completos/", ModeloProductoCompletoListAPIView.as_view(),   name="modelo-producto-completo-listar"),
     path("logistica/modelo-producto-completo/",   ModeloProductoCompletoDetailAPIView.as_view(), name="modelo-producto-completo-detalle"),
+
+    # ---------------------- NUEVO ENDPOINT ATRIBUTOS -------------------- #
+    path(
+        "logistica/modelo-producto-atributos/",
+        ModeloProductoAtributosAPIView.as_view(),
+        name="modelo-producto-atributos",
+    ),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),

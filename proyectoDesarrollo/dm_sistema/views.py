@@ -57,6 +57,7 @@ from .serializer import (
     IdentificadorSerieSerializer,
     UnidadMedidaSerializer,
     TipoMarcaProductoJoinSerializer,
+    ModeloProductoAtributoSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -2617,4 +2618,98 @@ class TipoMarcaProductoJoinDetailAPIView(APIView):
         }
 
         serializer = TipoMarcaProductoJoinSerializer(data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★ NUEVO ENDPOINT → ATRIBUTOS POR MODELO (POST)                           #
+# ------------------------------------------------------------------------- #
+class ModeloProductoAtributosAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/modelo-producto-atributos/
+
+    Body JSON:
+    {
+        "id_modelo_producto": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los atributos que pertenecen al modelo solicitado y a
+      la empresa del operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def post(self, request, *args, **kwargs):
+        # ---------------- 0) Validación de body ------------------------- #
+        modelo_id = request.data.get("id_modelo_producto")
+        if modelo_id is None:
+            return Response(
+                {"id_modelo_producto": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ---------------- 1) Verificación de token ---------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ---------------- 2) Ejecutamos la query ------------------------ #
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    mp.id_modelo_producto,
+                    mp.id_empresa,
+                    at.id               AS atributo_id,
+                    at.nombre_atributo
+                FROM  dm_logistica.modelo_producto AS mp
+                JOIN  dm_logistica.atributo        AS at
+                  ON  at.id_empresa         = mp.id_empresa
+                  AND at.id_modelo_producto = mp.id_modelo_producto
+                WHERE mp.id_empresa         = %s
+                  AND mp.id_modelo_producto = %s
+                ORDER BY mp.id_modelo_producto, at.id
+                """,
+                [empresa.id, modelo_id],
+            )
+            rows = cursor.fetchall()
+
+        if not rows:
+            return Response(
+                {"detail": "Sin atributos para el modelo solicitado"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        data = [
+            {
+                "id_modelo_producto": row[0],
+                "id_empresa":         row[1],
+                "atributo_id":        row[2],
+                "nombre_atributo":    row[3],
+            }
+            for row in rows
+        ]
+
+        serializer = ModeloProductoAtributoSerializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
