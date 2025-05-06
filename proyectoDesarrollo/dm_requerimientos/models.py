@@ -134,4 +134,4 @@ class Sla(models.Model):
 
     class Meta:
         managed = False
-        db_table = '"dm_requerimientos"."sla"'
+        db_table = 'sla'
