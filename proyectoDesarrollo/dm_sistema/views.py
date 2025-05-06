@@ -2820,3 +2820,107 @@ class AtributoUpdateAPIView(APIView):
             AtributoSerializer(atributo_actualizado).data,
             status=status.HTTP_200_OK,
         )
+# ------------------------------------------------------------------------- #
+#  ★ NUEVO ENDPOINT → CREAR ATRIBUTO (POST)                                 #
+# ------------------------------------------------------------------------- #
+class AtributoCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/atributo/crear/
+
+    Body JSON:
+    {
+        "id_modelo_producto": <int>,
+        "nombre_atributo":    "<str>"
+    }
+
+    • `id_empresa` se toma de la empresa asociada al operador autenticado
+      a través de la cookie **auth_token**.
+    • Valida que el modelo de producto exista y pertenezca a la misma empresa.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 0) Validación campos obligatorios ----------- #
+        if "id_modelo_producto" not in request.data:
+            return Response(
+                {"id_modelo_producto": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if "nombre_atributo" not in request.data:
+            return Response(
+                {"nombre_atributo": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Verificamos modelo de producto ----------- #
+        modelo_id = request.data["id_modelo_producto"]
+        try:
+            ModeloProducto.objects.get(
+                id_modelo_producto=modelo_id,
+                id_empresa=empresa.id
+            )
+        except ModeloProducto.DoesNotExist:
+            return Response(
+                {"detail": "Modelo de producto no encontrado o pertenece a otra empresa"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # ------------------ 3) Preparamos y normalizamos data ----------- #
+        def _normalize(data: Any) -> Dict[str, Any]:
+            if hasattr(data, "items"):
+                d = {k: v for k, v in data.items()}
+            else:
+                d = dict(data)
+            for k, v in d.items():
+                if isinstance(v, list) and v:
+                    d[k] = v[0]
+            return d
+
+        data = _normalize(request.data)
+        data["id_empresa"] = empresa.id     # fuerza id_empresa correcto
+
+        serializer = AtributoSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 4) Guardamos registro ----------------------- #
+        with transaction.atomic():
+            atributo = serializer.save()
+
+        return Response(
+            AtributoSerializer(atributo).data,
+            status=status.HTTP_201_CREATED,
+        )

@@ -50,8 +50,9 @@ from .views import (
     # -------------------------------------------------- #
     # -------- NUEVO ENDPOINT ATRIBUTOS ----------------- #
     ModeloProductoAtributosAPIView,
-    # -------- ★★★ NUEVO ENDPOINT ATRIBUTO (PUT) -------- #
-    AtributoUpdateAPIView,                       # ← IMPORTADO
+    # -------- ★★★ NUEVOS ENDPOINTS ATRIBUTO ------------ #
+    AtributoUpdateAPIView,          # PUT
+    AtributoCreateAPIView,          # ← NUEVO POST
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -129,12 +130,9 @@ urlpatterns = [
         name="modelo-producto-atributos",
     ),
 
-    # ---------------------- ★ NUEVO ENDPOINT ATRIBUTO (PUT) ------------- #
-    path(
-        "logistica/atributo/editar/",
-        AtributoUpdateAPIView.as_view(),
-        name="atributo-editar",
-    ),
+    # ---------------------- ENDPOINTS ATRIBUTO -------------------------- #
+    path("logistica/atributo/crear/", AtributoCreateAPIView.as_view(), name="atributo-crear"),   # ← NUEVO
+    path("logistica/atributo/editar/", AtributoUpdateAPIView.as_view(), name="atributo-editar"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
