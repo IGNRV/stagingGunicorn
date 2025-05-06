@@ -37,6 +37,7 @@ from dm_logistica.models import (
     ModeloProducto,     # ← NUEVO: insertar modelo de producto
     IdentificadorSerie,
     UnidadMedida,
+    Atributo,
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -58,6 +59,7 @@ from .serializer import (
     UnidadMedidaSerializer,
     TipoMarcaProductoJoinSerializer,
     ModeloProductoAtributoSerializer,
+    AtributoSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -2713,3 +2715,108 @@ class ModeloProductoAtributosAPIView(APIView):
 
         serializer = ModeloProductoAtributoSerializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★ NUEVO ENDPOINT → EDITAR ATRIBUTO (PUT)                                 #
+# ------------------------------------------------------------------------- #
+class AtributoUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/atributo/editar/
+
+    Body JSON esperado:
+    {
+        "id":               <int>,          # ← obligatorio
+        "id_modelo_producto": <int>,        # opcional
+        "nombre_atributo":   "<str>"        # opcional
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Solo permite actualizar la fila de dm_logistica.atributo cuyo `id` e
+      `id_empresa` coincidan con la empresa del operador autenticado.
+    • La actualización es parcial: se puede enviar uno, varios o todos
+      los campos permitidos.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def put(self, request, *args, **kwargs):
+        # 0) ID obligatorio ------------------------------------------------ #
+        atributo_id = request.data.get("id")
+        if atributo_id is None:
+            return Response(
+                {"id": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 1) Cookie / sesión ------------------------------------------------ #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # 2) Recuperamos atributo ----------------------------------------- #
+        try:
+            atributo = Atributo.objects.get(pk=atributo_id, id_empresa=empresa.id)
+        except Atributo.DoesNotExist:
+            return Response(
+                {"detail": "Atributo no encontrado"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # 3) Normalizamos datos ------------------------------------------- #
+        def _normalize(data: Any) -> Dict[str, Any]:
+            if hasattr(data, "items"):
+                d = {k: v for k, v in data.items()}
+            else:
+                d = dict(data)
+            for k, v in d.items():
+                if isinstance(v, list) and v:
+                    d[k] = v[0]
+            return d
+
+        update_data = _normalize(request.data)
+        update_data.pop("id_empresa", None)   # no se cambia empresa
+        update_data.pop("id", None)           # no se cambia PK
+
+        # 4) Serializamos / validamos ------------------------------------- #
+        serializer = AtributoSerializer(
+            instance=atributo,
+            data=update_data,
+            partial=True,
+        )
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 5) Guardamos cambios ------------------------------------------- #
+        with transaction.atomic():
+            atributo_actualizado = serializer.save()
+
+        return Response(
+            AtributoSerializer(atributo_actualizado).data,
+            status=status.HTTP_200_OK,
+        )

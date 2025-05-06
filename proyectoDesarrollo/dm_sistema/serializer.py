@@ -12,6 +12,7 @@ from dm_logistica.models import (
     ModeloProducto,
     IdentificadorSerie,
     UnidadMedida,
+    Atributo,                       # ← NUEVO
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -188,3 +189,15 @@ class ModeloProductoAtributoSerializer(serializers.Serializer):
     id_empresa         = serializers.IntegerField()
     atributo_id        = serializers.IntegerField()
     nombre_atributo    = serializers.CharField()
+
+
+# ------------------------------------------------------------------------- #
+#  ★ NUEVO SERIALIZER → ATRIBUTO (CRUD)                                     #
+# ------------------------------------------------------------------------- #
+class AtributoSerializer(serializers.ModelSerializer):
+    """
+    Serializador base para CRUD sobre dm_logistica.atributo.
+    """
+    class Meta:
+        model  = Atributo
+        fields = ["id", "id_empresa", "id_modelo_producto", "nombre_atributo"]
