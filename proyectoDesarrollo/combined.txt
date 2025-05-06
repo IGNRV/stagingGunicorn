@@ -155,7 +155,7 @@ class Sla(models.Model):
 
     class Meta:
         managed = False
-        db_table = '"dm_requerimientos"."sla"'
+        db_table = 'sla'
 
 
 === ./dm_requerimientos/tests.py ===
@@ -957,7 +957,8 @@ from dm_logistica.models import (
     ModeloProducto,
     IdentificadorSerie,
     UnidadMedida,
-    Atributo,                       # ← NUEVO
+    Atributo,
+    OrdenCompra,              # ← NUEVO
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -1148,6 +1149,18 @@ class AtributoSerializer(serializers.ModelSerializer):
         fields = ["id", "id_empresa", "id_modelo_producto", "nombre_atributo"]
 
 
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → ORDEN COMPRA (LIST)                               #
+# ------------------------------------------------------------------------- #
+class OrdenCompraSerializer(serializers.ModelSerializer):
+    """
+    Devuelve todos los campos de dm_logistica.orden_compra.
+    """
+    class Meta:
+        model  = OrdenCompra
+        fields = "__all__"
+
+
 === ./dm_sistema/admin.py ===
 from django.contrib import admin
 
@@ -1207,8 +1220,12 @@ from .views import (
     # -------------------------------------------------- #
     # -------- NUEVO ENDPOINT ATRIBUTOS ----------------- #
     ModeloProductoAtributosAPIView,
-    # -------- ★★★ NUEVO ENDPOINT ATRIBUTO (PUT) -------- #
-    AtributoUpdateAPIView,                       # ← IMPORTADO
+    # -------- ★★★ NUEVOS ENDPOINTS ATRIBUTO ------------ #
+    AtributoUpdateAPIView,          # PUT
+    AtributoCreateAPIView,          # ← NUEVO POST
+    AtributoDetailAPIView,
+    # -------- ★★★ NUEVO ENDPOINT ORDEN COMPRA ---------- #
+    OrdenCompraListAPIView,         # ← NUEVO GET
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -1286,12 +1303,13 @@ urlpatterns = [
         name="modelo-producto-atributos",
     ),
 
-    # ---------------------- ★ NUEVO ENDPOINT ATRIBUTO (PUT) ------------- #
-    path(
-        "logistica/atributo/editar/",
-        AtributoUpdateAPIView.as_view(),
-        name="atributo-editar",
-    ),
+    # ---------------------- ENDPOINTS ATRIBUTO -------------------------- #
+    path("logistica/atributo/crear/", AtributoCreateAPIView.as_view(), name="atributo-crear"),
+    path("logistica/atributo/editar/", AtributoUpdateAPIView.as_view(), name="atributo-editar"),
+    path("logistica/atributo/detalle/", AtributoDetailAPIView.as_view(), name="atributo-detalle"),
+
+    # ---------------------- ★ NUEVO ENDPOINT ORDEN COMPRA --------------- #
+    path("logistica/ordenes-compra/", OrdenCompraListAPIView.as_view(), name="orden-compra-listar"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
@@ -1353,6 +1371,7 @@ from dm_logistica.models import (
     IdentificadorSerie,
     UnidadMedida,
     Atributo,
+    OrdenCompra,
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -1375,6 +1394,7 @@ from .serializer import (
     TipoMarcaProductoJoinSerializer,
     ModeloProductoAtributoSerializer,
     AtributoSerializer,
+    OrdenCompraSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -4134,6 +4154,229 @@ class AtributoUpdateAPIView(APIView):
         return Response(
             AtributoSerializer(atributo_actualizado).data,
             status=status.HTTP_200_OK,
+        )
+# ------------------------------------------------------------------------- #
+#  ★ NUEVO ENDPOINT → CREAR ATRIBUTO (POST)                                 #
+# ------------------------------------------------------------------------- #
+class AtributoCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/atributo/crear/
+
+    Body JSON:
+    {
+        "id_modelo_producto": <int>,
+        "nombre_atributo":    "<str>"
+    }
+
+    • `id_empresa` se toma de la empresa asociada al operador autenticado
+      a través de la cookie **auth_token**.
+    • Valida que el modelo de producto exista y pertenezca a la misma empresa.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 0) Validación campos obligatorios ----------- #
+        if "id_modelo_producto" not in request.data:
+            return Response(
+                {"id_modelo_producto": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if "nombre_atributo" not in request.data:
+            return Response(
+                {"nombre_atributo": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Verificamos modelo de producto ----------- #
+        modelo_id = request.data["id_modelo_producto"]
+        try:
+            ModeloProducto.objects.get(
+                id_modelo_producto=modelo_id,
+                id_empresa=empresa.id
+            )
+        except ModeloProducto.DoesNotExist:
+            return Response(
+                {"detail": "Modelo de producto no encontrado o pertenece a otra empresa"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # ------------------ 3) Preparamos y normalizamos data ----------- #
+        def _normalize(data: Any) -> Dict[str, Any]:
+            if hasattr(data, "items"):
+                d = {k: v for k, v in data.items()}
+            else:
+                d = dict(data)
+            for k, v in d.items():
+                if isinstance(v, list) and v:
+                    d[k] = v[0]
+            return d
+
+        data = _normalize(request.data)
+        data["id_empresa"] = empresa.id     # fuerza id_empresa correcto
+
+        serializer = AtributoSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 4) Guardamos registro ----------------------- #
+        with transaction.atomic():
+            atributo = serializer.save()
+
+        return Response(
+            AtributoSerializer(atributo).data,
+            status=status.HTTP_201_CREATED,
+        )
+# ------------------------------------------------------------------------- #
+#  ★ NUEVO ENDPOINT → DETALLE ATRIBUTO (POST)                               #
+# ------------------------------------------------------------------------- #
+class AtributoDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/atributo/detalle/
+
+    Body JSON:
+    {
+        "id": <int>   # ← id del registro en dm_logistica.atributo
+    }
+
+    • Requiere la cookie **auth_token**.
+    • Devuelve 404 si el atributo no existe o pertenece a otra empresa.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 0) Validación de body ----------------------- #
+        atributo_id = request.data.get("id")
+        if atributo_id is None:
+            return Response(
+                {"id": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Recuperamos el atributo ------------------ #
+        try:
+            atributo = Atributo.objects.get(pk=atributo_id, id_empresa=empresa.id)
+        except Atributo.DoesNotExist:
+            return Response(
+                {"detail": "Atributo no encontrado"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # ------------------ 3) Serializamos y respondemos --------------- #
+        return Response(
+            AtributoSerializer(atributo).data,
+            status=status.HTTP_200_OK,
+        )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → LISTAR ORDENES DE COMPRA POR EMPRESA (GET)          #
+# ------------------------------------------------------------------------- #
+class OrdenCompraListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/ordenes-compra/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todas las órdenes de compra (`dm_logistica.orden_compra`)
+      cuyo `id_empresa` coincide con la empresa asociada al operador
+      autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Listamos órdenes de compra --------------- #
+        qs = (
+            OrdenCompra.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("-fecha")           # último primero
+        )
+        return Response(
+            OrdenCompraSerializer(qs, many=True).data,
+            status=status.HTTP_200_OK
         )
 
 === ./dm_sistema/models.py ===

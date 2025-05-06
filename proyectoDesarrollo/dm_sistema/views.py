@@ -38,6 +38,7 @@ from dm_logistica.models import (
     IdentificadorSerie,
     UnidadMedida,
     Atributo,
+    OrdenCompra,
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -60,6 +61,7 @@ from .serializer import (
     TipoMarcaProductoJoinSerializer,
     ModeloProductoAtributoSerializer,
     AtributoSerializer,
+    OrdenCompraSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -2993,4 +2995,53 @@ class AtributoDetailAPIView(APIView):
         return Response(
             AtributoSerializer(atributo).data,
             status=status.HTTP_200_OK,
+        )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → LISTAR ORDENES DE COMPRA POR EMPRESA (GET)          #
+# ------------------------------------------------------------------------- #
+class OrdenCompraListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/ordenes-compra/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todas las órdenes de compra (`dm_logistica.orden_compra`)
+      cuyo `id_empresa` coincide con la empresa asociada al operador
+      autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Listamos órdenes de compra --------------- #
+        qs = (
+            OrdenCompra.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("-fecha")           # último primero
+        )
+        return Response(
+            OrdenCompraSerializer(qs, many=True).data,
+            status=status.HTTP_200_OK
         )

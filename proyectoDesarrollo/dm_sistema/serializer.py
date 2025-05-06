@@ -12,7 +12,8 @@ from dm_logistica.models import (
     ModeloProducto,
     IdentificadorSerie,
     UnidadMedida,
-    Atributo,                       # ← NUEVO
+    Atributo,
+    OrdenCompra,              # ← NUEVO
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -201,3 +202,15 @@ class AtributoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Atributo
         fields = ["id", "id_empresa", "id_modelo_producto", "nombre_atributo"]
+
+
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → ORDEN COMPRA (LIST)                               #
+# ------------------------------------------------------------------------- #
+class OrdenCompraSerializer(serializers.ModelSerializer):
+    """
+    Devuelve todos los campos de dm_logistica.orden_compra.
+    """
+    class Meta:
+        model  = OrdenCompra
+        fields = "__all__"
