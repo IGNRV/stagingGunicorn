@@ -1173,6 +1173,27 @@ class SolicitudCompraSerializer(serializers.ModelSerializer):
         model  = SolicitudCompra
         fields = "__all__"
 
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → SOLICITUD COMPRA (JOIN COMPLETO)                  #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraJoinSerializer(serializers.Serializer):
+    id                         = serializers.IntegerField()
+    id_empresa                 = serializers.IntegerField()
+    operador                   = serializers.CharField()
+    id_aprobador               = serializers.IntegerField()
+    estado_solicitud_compra    = serializers.CharField()
+    fecha_registro             = serializers.DateTimeField()
+    descripcion                = serializers.CharField()
+    fecha_solicitud_compra     = serializers.DateTimeField(allow_null=True)
+    tipo_solicitud             = serializers.CharField()
+    titulo                     = serializers.CharField(allow_null=True)
+    ruta_file                  = serializers.CharField(allow_null=True)
+    cod_presupuesto            = serializers.CharField(allow_null=True)
+    id_punto_venta             = serializers.IntegerField(allow_null=True)
+    operador_rechazo           = serializers.IntegerField(allow_null=True)
+    fecha_rechazo              = serializers.DateTimeField(allow_null=True)
+    motivo_rechazo             = serializers.CharField(allow_null=True)
+    id_requerimiento           = serializers.IntegerField(allow_null=True)
 
 === ./dm_sistema/admin.py ===
 from django.contrib import admin
@@ -1228,7 +1249,7 @@ from .views import (
     # ----------------- NUEVO ENDPOINTS ----------------- #
     ModeloProductoCompletoListAPIView,
     ModeloProductoCompletoDetailAPIView,
-    # -------- NUEVO (★) JOIN TIPO‑MARCA‑PRODUCTO -------- #
+    # -------- NUEVO (★) JOIN TIPO-MARCA-PRODUCTO -------- #
     TipoMarcaProductoJoinDetailAPIView,
     # -------------------------------------------------- #
     # -------- NUEVO ENDPOINT ATRIBUTOS ----------------- #
@@ -1243,8 +1264,10 @@ from .views import (
     OrdenCompraCreateAPIView,
     OrdenCompraUpdateAPIView,
     # -------- ★★★ NUEVO ENDPOINT SOLICITUD COMPRA ------ #
-    SolicitudCompraListAPIView,     # ← NUEVO
-    # -------- SISTEMA ----------- #
+    SolicitudCompraListAPIView,     # LIST
+    SolicitudCompraJoinListAPIView, # JOIN
+    SolicitudCompraCreateAPIView,   # ← CREACIÓN
+    # --------------------------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
     RegionListAPIView,
@@ -1297,7 +1320,7 @@ urlpatterns = [
     path("logistica/tipo-marca-producto/detalle/", TipoMarcaProductoDetailAPIView.as_view(),  name="tipo-marca-producto-detalle"),
     path("logistica/tipo-marca-producto/eliminar/", TipoMarcaProductoDeleteAPIView.as_view(), name="tipo-marca-producto-eliminar"),
 
-    # ---------- ★ NUEVO ENDPOINT – JOIN TIPO‑MARCA‑PRODUCTO ------------- #
+    # ---------- ★ NUEVO ENDPOINT – JOIN TIPO-MARCA-PRODUCTO ------------- #
     path(
         "logistica/tipo-marca-producto-completo/",
         TipoMarcaProductoJoinDetailAPIView.as_view(),
@@ -1332,8 +1355,10 @@ urlpatterns = [
     path("logistica/orden-compra/crear/",    OrdenCompraCreateAPIView.as_view(), name="orden-compra-crear"),
     path("logistica/orden-compra/editar/",   OrdenCompraUpdateAPIView.as_view(), name="orden-compra-editar"),
 
-    # ---------------------- ★ NUEVO ENDPOINT SOLICITUD COMPRA ----------- #
-    path("logistica/solicitudes-compra/", SolicitudCompraListAPIView.as_view(), name="solicitud-compra-listar"),
+    # ---------------------- ★★★ NUEVO ENDPOINT SOLICITUD COMPRA ----------- #
+    path("logistica/solicitudes-compra/",         SolicitudCompraListAPIView.as_view(),     name="solicitud-compra-listar"),
+    path("logistica/solicitudes-compra/joined/",   SolicitudCompraJoinListAPIView.as_view(), name="solicitud-compra-join-listar"),
+    path("logistica/solicitud-compra/crear/",      SolicitudCompraCreateAPIView.as_view(),   name="solicitud-compra-crear"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
@@ -1421,6 +1446,7 @@ from .serializer import (
     AtributoSerializer,
     OrdenCompraSerializer,
     SolicitudCompraSerializer,
+    SolicitudCompraJoinSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -4714,6 +4740,197 @@ class SolicitudCompraListAPIView(APIView):
             SolicitudCompraSerializer(qs, many=True).data,
             status=status.HTTP_200_OK,
         )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → LISTAR SOLICITUDES DE COMPRA CON JOIN (GET)         #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraJoinListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/solicitudes-compra/joined/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve la lista completa de solicitudes de compra
+      con los datos de operador, tipo y estado,
+      filtradas por la empresa del operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # 1) Validación del token en la cookie
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Ejecutamos la consulta JOIN
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  sc.id,
+                  sc.id_empresa,
+                  op.nombres AS operador,
+                  sc.id_aprobador,
+                  esc.descripcion_solicitud_compra AS estado_solicitud_compra,
+                  sc.fecha_registro,
+                  sc.descripcion,
+                  sc.fecha_solicitud_compra,
+                  ts.descripcion           AS tipo_solicitud,
+                  sc.titulo,
+                  sc.ruta_file,
+                  sc.cod_presupuesto,
+                  sc.id_punto_venta,
+                  sc.operador_rechazo,
+                  sc.fecha_rechazo,
+                  sc.motivo_rechazo,
+                  sc.id_requerimiento
+                FROM dm_logistica.solicitud_compra AS sc
+                JOIN dm_sistema.operador AS op
+                  ON sc.id_operador = op.id
+                JOIN dm_logistica.tipo_solicitud AS ts
+                  ON sc.id_tipo_solicitud = ts.id
+                JOIN dm_logistica.estado_solicitud_compra AS esc
+                  ON sc.id_estado_solicitud_compra = esc.id
+                WHERE sc.id_empresa = %s
+                ORDER BY sc.id
+            """, [empresa.id])
+            rows = cursor.fetchall()
+
+        # 3) Mapear filas a dict
+        data = [
+            {
+                "id":                         row[0],
+                "id_empresa":                 row[1],
+                "operador":                   row[2],
+                "id_aprobador":               row[3],
+                "estado_solicitud_compra":    row[4],
+                "fecha_registro":             row[5],
+                "descripcion":                row[6],
+                "fecha_solicitud_compra":     row[7],
+                "tipo_solicitud":             row[8],
+                "titulo":                     row[9],
+                "ruta_file":                  row[10],
+                "cod_presupuesto":            row[11],
+                "id_punto_venta":             row[12],
+                "operador_rechazo":           row[13],
+                "fecha_rechazo":              row[14],
+                "motivo_rechazo":             row[15],
+                "id_requerimiento":           row[16],
+            }
+            for row in rows
+        ]
+
+        # 4) Serializar y responder
+        serializer = SolicitudCompraJoinSerializer(data, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → CREAR SOLICITUD COMPRA (POST)                      #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/solicitud-compra/crear/
+
+    • El `id_empresa` enviado en el body será ignorado;
+      se toma de la empresa asociada al operador autenticado.
+    • Las columnas `fecha_registro` y `fecha_solicitud_compra`
+      se establecen con la fecha y hora actuales al momento de la inserción.
+
+    Body JSON de ejemplo:
+    {
+        "id": 1,
+        "id_empresa": 1,
+        "id_operador": 1,
+        "id_aprobador": 2,
+        "fecha_registro": "2025-04-30T09:15:00-04:00",
+        "descripcion": "Compra de materiales de red para nuevo proyecto",
+        "fecha_solicitud_compra": "2025-05-05T00:00:00-04:00",
+        "titulo": "Materiales de Red Proyecto X",
+        "ruta_file": "/files/solicitudes/1.pdf",
+        "cod_presupuesto": "PR25-0001",
+        "id_punto_venta": 1,
+        "operador_rechazo": null,
+        "fecha_rechazo": null,
+        "motivo_rechazo": null,
+        "id_requerimiento": null,
+        "id_estado_solicitud_compra": 1,
+        "id_tipo_solicitud": 1
+    }
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 1) Verificación de token en cookie
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Normalizamos y ajustamos data
+        def _normalize(data: Any) -> Dict[str, Any]:
+            if hasattr(data, "items"):
+                d = {k: v for k, v in data.items()}
+            else:
+                d = dict(data)
+            for k, v in d.items():
+                if isinstance(v, list) and v:
+                    d[k] = v[0]
+            return d
+
+        data = _normalize(request.data)
+        # Forzamos empresa correcta
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+        # Sobrescribimos fechas con el timestamp actual
+        timestamp = timezone.now()
+        data["fecha_registro"] = timestamp
+        data["fecha_solicitud_compra"] = timestamp
+
+        # 3) Serializamos y validamos
+        serializer = SolicitudCompraSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4) Guardamos transaccionalmente
+        with transaction.atomic():
+            solicitud = serializer.save()
+
+        # 5) Respondemos con 201 y el objeto creado
+        return Response(
+            SolicitudCompraSerializer(solicitud).data,
+            status=status.HTTP_201_CREATED,
+        )
+
 
 === ./dm_sistema/models.py ===
 # This is an auto-generated Django model module.

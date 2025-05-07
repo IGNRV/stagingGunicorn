@@ -3455,3 +3455,100 @@ class SolicitudCompraJoinListAPIView(APIView):
         # 4) Serializar y responder
         serializer = SolicitudCompraJoinSerializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → CREAR SOLICITUD COMPRA (POST)                      #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/solicitud-compra/crear/
+
+    • El `id_empresa` enviado en el body será ignorado;
+      se toma de la empresa asociada al operador autenticado.
+    • Las columnas `fecha_registro` y `fecha_solicitud_compra`
+      se establecen con la fecha y hora actuales al momento de la inserción.
+
+    Body JSON de ejemplo:
+    {
+        "id_empresa": 1,
+        "id_operador": 1,
+        "id_aprobador": 2,
+        "fecha_registro": "2025-04-30T09:15:00-04:00",
+        "descripcion": "Compra de materiales de red para nuevo proyecto",
+        "fecha_solicitud_compra": "2025-05-05T00:00:00-04:00",
+        "titulo": "Materiales de Red Proyecto X",
+        "ruta_file": "/files/solicitudes/1.pdf",
+        "cod_presupuesto": "PR25-0001",
+        "id_punto_venta": 1,
+        "operador_rechazo": null,
+        "fecha_rechazo": null,
+        "motivo_rechazo": null,
+        "id_requerimiento": null,
+        "id_estado_solicitud_compra": 1,
+        "id_tipo_solicitud": 1
+    }
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 1) Verificación de token en cookie
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Normalizamos y ajustamos data
+        def _normalize(data: Any) -> Dict[str, Any]:
+            if hasattr(data, "items"):
+                d = {k: v for k, v in data.items()}
+            else:
+                d = dict(data)
+            for k, v in d.items():
+                if isinstance(v, list) and v:
+                    d[k] = v[0]
+            return d
+
+        data = _normalize(request.data)
+
+        # --- aquí eliminamos el 'id' si viene en el JSON ---
+        data.pop("id", None)
+
+        # Forzamos empresa correcta
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+
+        # Sobrescribimos fechas con el timestamp actual
+        timestamp = timezone.now()
+        data["fecha_registro"] = timestamp
+        data["fecha_solicitud_compra"] = timestamp
+
+        # 3) Serializamos y validamos
+        serializer = SolicitudCompraSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4) Guardamos transaccionalmente
+        with transaction.atomic():
+            solicitud = serializer.save()
+
+        # 5) Respondemos con 201 y el objeto creado
+        return Response(
+            SolicitudCompraSerializer(solicitud).data,
+            status=status.HTTP_201_CREATED,
+        )
