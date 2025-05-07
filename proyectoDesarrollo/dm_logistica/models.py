@@ -48,7 +48,7 @@ class AtributoDetalle(models.Model):
 
 class Bodega(models.Model):
     id_empresa = models.IntegerField()
-    id_bodega_tipo = models.IntegerField()
+    id_bodega_tipo = models.ForeignKey('BodegaTipo', models.DO_NOTHING, db_column='id_bodega_tipo')
     estado_bodega = models.IntegerField()
     nombre_bodega = models.CharField(max_length=100)
     nombre_tipo_bodega = models.CharField(max_length=50, blank=True, null=True)
@@ -181,8 +181,6 @@ class DetalleCotizacion(models.Model):
 class EstadoControlInventario(models.Model):
     id_empresa = models.IntegerField(blank=True, null=True)
     id_estado_solicitud_compra = models.ForeignKey('EstadoSolicitudCompra', models.DO_NOTHING, db_column='id_estado_solicitud_compra', blank=True, null=True)
-    id_estado_compra = models.IntegerField(blank=True, null=True)
-    id_estado_control_inventario = models.IntegerField(blank=True, null=True)
     detalle = models.CharField(max_length=50, blank=True, null=True)
 
     class Meta:
@@ -227,7 +225,7 @@ class EstadoSolicitudCompra(models.Model):
 
 class Giro(models.Model):
     id_empresa = models.IntegerField()
-    id_proveedor = models.IntegerField()
+    id_proveedor = models.ForeignKey('Proveedor', models.DO_NOTHING, db_column='id_proveedor')
     descrip_giro = models.CharField(max_length=250)
     codigo_sii = models.CharField(max_length=10)
 
@@ -346,7 +344,7 @@ class OrdenCompra(models.Model):
     monto_total = models.FloatField(blank=True, null=True)
     observacion = models.TextField(blank=True, null=True)
     fecha_entrega = models.DateTimeField(blank=True, null=True)
-    id_aprobador = models.IntegerField()
+    id_aprobador = models.IntegerField(blank=True, null=True)
     archivo = models.CharField(max_length=256, blank=True, null=True)
     notas_adicionales = models.TextField(blank=True, null=True)
     id_requerimiento = models.IntegerField()
@@ -463,7 +461,7 @@ class ServiciosCajaChica(models.Model):
     monto = models.FloatField(blank=True, null=True)
     id_empresa = models.IntegerField()
     id_operador = models.IntegerField()
-    id_operador_autoriza = models.CharField(max_length=50)
+    id_operador_autoriza = models.IntegerField(blank=True, null=True)
     fecha_registro = models.DateTimeField()
     fecha_autoriza = models.DateField(blank=True, null=True)
     nota = models.TextField(blank=True, null=True)
@@ -500,7 +498,7 @@ class ServiciosCajaChicaDetalle(models.Model):
 class SolicitudCompra(models.Model):
     id_empresa = models.IntegerField()
     id_operador = models.IntegerField()
-    id_aprobador = models.IntegerField()
+    id_aprobador = models.IntegerField(blank=True, null=True)
     id_estado_solicitud_compra = models.ForeignKey(EstadoSolicitudCompra, models.DO_NOTHING, db_column='id_estado_solicitud_compra')
     fecha_registro = models.DateTimeField()
     descripcion = models.TextField()
@@ -525,7 +523,7 @@ class TipoControlInventario(models.Model):
 
     class Meta:
         managed = False
-        db_table = '"dm_logistica"."tipo_control_inventario"'
+        db_table = 'tipo_control_inventario'
 
 
 class TipoMarcaProducto(models.Model):

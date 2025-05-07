@@ -3528,9 +3528,22 @@ class SolicitudCompraCreateAPIView(APIView):
 
         # 2) Normalizamos y ajustamos data
         data = _normalize(request.data)
-        # Forzamos empresa correcta
+
+        # 2.1) Forzamos empresa correcta
         data.pop("id_empresa", None)
         data["id_empresa"] = empresa.id
+
+        # 2.2) Forzamos operador actual
+        data.pop("id_operador", None)
+        data["id_operador"] = sesion_activa.id_operador.id
+
+        # 2.3) Estado inicial de la solicitud: 1
+        data.pop("id_estado_solicitud_compra", None)
+        data["id_estado_solicitud_compra"] = 1
+
+        # 2.4) Aprobador inicial: null
+        data.pop("id_aprobador", None)
+        data["id_aprobador"] = None
 
         # 3) Subida y guardado del PDF
         pdf = request.FILES.get("pdf_file")
