@@ -11,10 +11,12 @@ import os
 import base64
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict
+from uuid import uuid4
 
 from django.conf import settings
 from django.db import transaction, connection
 from django.utils import timezone
+from django.core.files.storage import default_storage
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -40,6 +42,7 @@ from dm_logistica.models import (
     Atributo,
     OrdenCompra,
     SolicitudCompra,
+    TipoSolicitud,
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -65,6 +68,7 @@ from .serializer import (
     OrdenCompraSerializer,
     SolicitudCompraSerializer,
     SolicitudCompraJoinSerializer,
+    TipoSolicitudSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -178,6 +182,33 @@ def _normalize_request_data(data: Any) -> Dict[str, Any]:
             data_dict[k] = v[0]
 
     return data_dict
+
+def _normalize(data: Any) -> Dict[str, Any]:
+    """
+    Convierte cualquier QueryDict/OrderedDict en un dict plano
+    tomando solo el primer valor cuando sea lista.
+    """
+    if hasattr(data, "items"):
+        d = {k: v for k, v in data.items()}
+    else:
+        d = dict(data)
+    for k, v in d.items():
+        if isinstance(v, list) and v:
+            d[k] = v[0]
+    return d
+
+def _save_uploaded_file(file_obj, subdir="solicitud_compra") -> str:
+    """
+    Guarda el PDF en default_storage y devuelve la ruta pública:
+      /files/solicitud_compra/<uuid4>.pdf
+    """
+    ext = os.path.splitext(file_obj.name)[1] or ".pdf"
+    filename = f"{uuid4().hex}{ext}"
+    # guardamos dentro de MEDIA_ROOT/files/solicitud_compra/
+    full_path = os.path.join("files", subdir, filename)
+    saved_path = default_storage.save(full_path, file_obj)
+    # devolvemos la URL o, si no, la ruta relativa con leading slash
+    return default_storage.url(saved_path) if hasattr(default_storage, "url") else f"/{saved_path}"
 
 
 # ------------------------------------------------------------------------- #
@@ -3466,30 +3497,12 @@ class SolicitudCompraCreateAPIView(APIView):
       se toma de la empresa asociada al operador autenticado.
     • Las columnas `fecha_registro` y `fecha_solicitud_compra`
       se establecen con la fecha y hora actuales al momento de la inserción.
-
-    Body JSON de ejemplo:
-    {
-        "id_empresa": 1,
-        "id_operador": 1,
-        "id_aprobador": 2,
-        "fecha_registro": "2025-04-30T09:15:00-04:00",
-        "descripcion": "Compra de materiales de red para nuevo proyecto",
-        "fecha_solicitud_compra": "2025-05-05T00:00:00-04:00",
-        "titulo": "Materiales de Red Proyecto X",
-        "ruta_file": "/files/solicitudes/1.pdf",
-        "cod_presupuesto": "PR25-0001",
-        "id_punto_venta": 1,
-        "operador_rechazo": null,
-        "fecha_rechazo": null,
-        "motivo_rechazo": null,
-        "id_requerimiento": null,
-        "id_estado_solicitud_compra": 1,
-        "id_tipo_solicitud": 1
-    }
+    • Ahora acepta multipart/form-data con un campo file llamado
+      **pdf_file** para subir el PDF de la solicitud.
     """
     authentication_classes: list = []
     permission_classes:     list = []
-    parser_classes = [JSONParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request, *args, **kwargs):
         # 1) Verificación de token en cookie
@@ -3514,41 +3527,78 @@ class SolicitudCompraCreateAPIView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
 
         # 2) Normalizamos y ajustamos data
-        def _normalize(data: Any) -> Dict[str, Any]:
-            if hasattr(data, "items"):
-                d = {k: v for k, v in data.items()}
-            else:
-                d = dict(data)
-            for k, v in d.items():
-                if isinstance(v, list) and v:
-                    d[k] = v[0]
-            return d
-
         data = _normalize(request.data)
-
-        # --- aquí eliminamos el 'id' si viene en el JSON ---
-        data.pop("id", None)
-
         # Forzamos empresa correcta
         data.pop("id_empresa", None)
         data["id_empresa"] = empresa.id
 
-        # Sobrescribimos fechas con el timestamp actual
-        timestamp = timezone.now()
-        data["fecha_registro"] = timestamp
-        data["fecha_solicitud_compra"] = timestamp
+        # 3) Subida y guardado del PDF
+        pdf = request.FILES.get("pdf_file")
+        if pdf:
+            # guarda en /files/solicitud_compra/<uuid>.pdf
+            data["ruta_file"] = _save_uploaded_file(pdf, subdir="solicitud_compra")
 
-        # 3) Serializamos y validamos
+        # 4) Sobrescribimos fechas con el timestamp actual
+        now_ts = timezone.now()
+        data["fecha_registro"] = now_ts
+        data["fecha_solicitud_compra"] = now_ts
+
+        # 5) Serializamos y validamos
         serializer = SolicitudCompraSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # 4) Guardamos transaccionalmente
+        # 6) Guardamos transaccionalmente
         with transaction.atomic():
             solicitud = serializer.save()
 
-        # 5) Respondemos con 201 y el objeto creado
+        # 7) Respondemos con 201 y el objeto creado
         return Response(
             SolicitudCompraSerializer(solicitud).data,
             status=status.HTTP_201_CREATED,
+        )
+# ------------------------------------------------------------------------- #
+#  LISTAR TIPOS DE SOLICITUD (GET)                                          #
+# ------------------------------------------------------------------------- #
+class TipoSolicitudListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/tipos-solicitud/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros de `dm_logistica.tipo_solicitud`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        qs = TipoSolicitud.objects.all().order_by("descripcion")
+        return Response(
+            TipoSolicitudSerializer(qs, many=True).data,
+            status=status.HTTP_200_OK,
         )

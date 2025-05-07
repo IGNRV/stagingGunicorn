@@ -960,6 +960,7 @@ from dm_logistica.models import (
     Atributo,
     OrdenCompra,
     SolicitudCompra,        # ← NUEVO
+    TipoSolicitud,          # ← NUEVO
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -1003,6 +1004,12 @@ class BodegaSerializer(serializers.ModelSerializer):
 class BodegaTipoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = BodegaTipo
+        fields = "__all__"
+
+
+class TipoSolicitudSerializer(serializers.ModelSerializer):  # ← NUEVO
+    class Meta:
+        model  = TipoSolicitud
         fields = "__all__"
 
 
@@ -1084,9 +1091,6 @@ class ModeloProductoCompletoSerializer(serializers.Serializer):
 #  MODELO PRODUCTO – JOIN + IMAGEN BASE64                                   #
 # ------------------------------------------------------------------------- #
 class ModeloProductoCompletoDetalleSerializer(ModeloProductoCompletoSerializer):
-    """
-    Extiende el serializer anterior agregando la imagen codificada en base64.
-    """
     imagen_base64 = serializers.CharField(allow_null=True, read_only=True)
 
 
@@ -1110,13 +1114,9 @@ class UnidadMedidaSerializer(serializers.ModelSerializer):
 
 
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZER → JOIN TIPO‑MARCA‑PRODUCTO                              #
+#  NUEVO SERIALIZER → JOIN TIPO-MARCA-PRODUCTO                              #
 # ------------------------------------------------------------------------- #
 class TipoMarcaProductoJoinSerializer(serializers.Serializer):
-    """
-    Devuelve la fila de dm_logistica.tipo_marca_producto con los datos
-    descriptivos del tipo y la marca de producto.
-    """
     id_tipo_marca_producto = serializers.IntegerField()
     id_empresa             = serializers.IntegerField()
     codigo_tipo_producto   = serializers.CharField()
@@ -1128,10 +1128,6 @@ class TipoMarcaProductoJoinSerializer(serializers.Serializer):
 #  --- NUEVO ENDPOINT ATRIBUTOS ------------------------------------------ #
 # ------------------------------------------------------------------------- #
 class ModeloProductoAtributoSerializer(serializers.Serializer):
-    """
-    Serializer para la respuesta del endpoint que entrega
-    los atributos asociados a un modelo de producto.
-    """
     id_modelo_producto = serializers.IntegerField()
     id_empresa         = serializers.IntegerField()
     atributo_id        = serializers.IntegerField()
@@ -1142,9 +1138,6 @@ class ModeloProductoAtributoSerializer(serializers.Serializer):
 #  ★ NUEVO SERIALIZER → ATRIBUTO (CRUD)                                     #
 # ------------------------------------------------------------------------- #
 class AtributoSerializer(serializers.ModelSerializer):
-    """
-    Serializador base para CRUD sobre dm_logistica.atributo.
-    """
     class Meta:
         model  = Atributo
         fields = ["id", "id_empresa", "id_modelo_producto", "nombre_atributo"]
@@ -1154,9 +1147,6 @@ class AtributoSerializer(serializers.ModelSerializer):
 #  ★★★ NUEVO SERIALIZER → ORDEN COMPRA (LIST)                               #
 # ------------------------------------------------------------------------- #
 class OrdenCompraSerializer(serializers.ModelSerializer):
-    """
-    Devuelve todos los campos de dm_logistica.orden_compra.
-    """
     class Meta:
         model  = OrdenCompra
         fields = "__all__"
@@ -1166,12 +1156,10 @@ class OrdenCompraSerializer(serializers.ModelSerializer):
 #  ★★★ NUEVO SERIALIZER → SOLICITUD COMPRA (LIST)                           #
 # ------------------------------------------------------------------------- #
 class SolicitudCompraSerializer(serializers.ModelSerializer):
-    """
-    Serializador para dm_logistica.solicitud_compra.
-    """
     class Meta:
         model  = SolicitudCompra
         fields = "__all__"
+
 
 # ------------------------------------------------------------------------- #
 #  ★★★ NUEVO SERIALIZER → SOLICITUD COMPRA (JOIN COMPLETO)                  #
@@ -1194,6 +1182,7 @@ class SolicitudCompraJoinSerializer(serializers.Serializer):
     fecha_rechazo              = serializers.DateTimeField(allow_null=True)
     motivo_rechazo             = serializers.CharField(allow_null=True)
     id_requerimiento           = serializers.IntegerField(allow_null=True)
+
 
 === ./dm_sistema/admin.py ===
 from django.contrib import admin
@@ -1273,6 +1262,7 @@ from .views import (
     RegionListAPIView,
     IdentificadorSerieListAPIView,
     UnidadMedidaListAPIView,
+    TipoSolicitudListAPIView,
 )
 
 urlpatterns = [
@@ -1370,6 +1360,9 @@ urlpatterns = [
 
     # -------- LOGÍSTICA – UNIDADES DE MEDIDA -------- #
     path("logistica/unidades-medida/", UnidadMedidaListAPIView.as_view(), name="unidad-medida-listar"),
+
+    # -------- SISTEMA – TIPOS DE SOLICITUD -------- #
+    path("tipos-solicitud/", TipoSolicitudListAPIView.as_view(), name="tipo-solicitud-listar"),
 ]
 
 
@@ -1393,10 +1386,12 @@ import os
 import base64
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Dict
+from uuid import uuid4
 
 from django.conf import settings
 from django.db import transaction, connection
 from django.utils import timezone
+from django.core.files.storage import default_storage
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -1422,6 +1417,7 @@ from dm_logistica.models import (
     Atributo,
     OrdenCompra,
     SolicitudCompra,
+    TipoSolicitud,
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -1447,6 +1443,7 @@ from .serializer import (
     OrdenCompraSerializer,
     SolicitudCompraSerializer,
     SolicitudCompraJoinSerializer,
+    TipoSolicitudSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -1560,6 +1557,33 @@ def _normalize_request_data(data: Any) -> Dict[str, Any]:
             data_dict[k] = v[0]
 
     return data_dict
+
+def _normalize(data: Any) -> Dict[str, Any]:
+    """
+    Convierte cualquier QueryDict/OrderedDict en un dict plano
+    tomando solo el primer valor cuando sea lista.
+    """
+    if hasattr(data, "items"):
+        d = {k: v for k, v in data.items()}
+    else:
+        d = dict(data)
+    for k, v in d.items():
+        if isinstance(v, list) and v:
+            d[k] = v[0]
+    return d
+
+def _save_uploaded_file(file_obj, subdir="solicitud_compra") -> str:
+    """
+    Guarda el PDF en default_storage y devuelve la ruta pública:
+      /files/solicitud_compra/<uuid4>.pdf
+    """
+    ext = os.path.splitext(file_obj.name)[1] or ".pdf"
+    filename = f"{uuid4().hex}{ext}"
+    # guardamos dentro de MEDIA_ROOT/files/solicitud_compra/
+    full_path = os.path.join("files", subdir, filename)
+    saved_path = default_storage.save(full_path, file_obj)
+    # devolvemos la URL o, si no, la ruta relativa con leading slash
+    return default_storage.url(saved_path) if hasattr(default_storage, "url") else f"/{saved_path}"
 
 
 # ------------------------------------------------------------------------- #
@@ -4848,31 +4872,12 @@ class SolicitudCompraCreateAPIView(APIView):
       se toma de la empresa asociada al operador autenticado.
     • Las columnas `fecha_registro` y `fecha_solicitud_compra`
       se establecen con la fecha y hora actuales al momento de la inserción.
-
-    Body JSON de ejemplo:
-    {
-        "id": 1,
-        "id_empresa": 1,
-        "id_operador": 1,
-        "id_aprobador": 2,
-        "fecha_registro": "2025-04-30T09:15:00-04:00",
-        "descripcion": "Compra de materiales de red para nuevo proyecto",
-        "fecha_solicitud_compra": "2025-05-05T00:00:00-04:00",
-        "titulo": "Materiales de Red Proyecto X",
-        "ruta_file": "/files/solicitudes/1.pdf",
-        "cod_presupuesto": "PR25-0001",
-        "id_punto_venta": 1,
-        "operador_rechazo": null,
-        "fecha_rechazo": null,
-        "motivo_rechazo": null,
-        "id_requerimiento": null,
-        "id_estado_solicitud_compra": 1,
-        "id_tipo_solicitud": 1
-    }
+    • Ahora acepta multipart/form-data con un campo file llamado
+      **pdf_file** para subir el PDF de la solicitud.
     """
     authentication_classes: list = []
     permission_classes:     list = []
-    parser_classes = [JSONParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request, *args, **kwargs):
         # 1) Verificación de token en cookie
@@ -4897,38 +4902,80 @@ class SolicitudCompraCreateAPIView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
 
         # 2) Normalizamos y ajustamos data
-        def _normalize(data: Any) -> Dict[str, Any]:
-            if hasattr(data, "items"):
-                d = {k: v for k, v in data.items()}
-            else:
-                d = dict(data)
-            for k, v in d.items():
-                if isinstance(v, list) and v:
-                    d[k] = v[0]
-            return d
-
         data = _normalize(request.data)
         # Forzamos empresa correcta
         data.pop("id_empresa", None)
         data["id_empresa"] = empresa.id
-        # Sobrescribimos fechas con el timestamp actual
-        timestamp = timezone.now()
-        data["fecha_registro"] = timestamp
-        data["fecha_solicitud_compra"] = timestamp
 
-        # 3) Serializamos y validamos
+        # 3) Subida y guardado del PDF
+        pdf = request.FILES.get("pdf_file")
+        if pdf:
+            # guarda en /files/solicitud_compra/<uuid>.pdf
+            data["ruta_file"] = _save_uploaded_file(pdf, subdir="solicitud_compra")
+
+        # 4) Sobrescribimos fechas con el timestamp actual
+        now_ts = timezone.now()
+        data["fecha_registro"] = now_ts
+        data["fecha_solicitud_compra"] = now_ts
+
+        # 5) Serializamos y validamos
         serializer = SolicitudCompraSerializer(data=data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # 4) Guardamos transaccionalmente
+        # 6) Guardamos transaccionalmente
         with transaction.atomic():
             solicitud = serializer.save()
 
-        # 5) Respondemos con 201 y el objeto creado
+        # 7) Respondemos con 201 y el objeto creado
         return Response(
             SolicitudCompraSerializer(solicitud).data,
             status=status.HTTP_201_CREATED,
+        )
+# ------------------------------------------------------------------------- #
+#  LISTAR TIPOS DE SOLICITUD (GET)                                          #
+# ------------------------------------------------------------------------- #
+class TipoSolicitudListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/tipos-solicitud/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todos los registros de `dm_logistica.tipo_solicitud`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        qs = TipoSolicitud.objects.all().order_by("descripcion")
+        return Response(
+            TipoSolicitudSerializer(qs, many=True).data,
+            status=status.HTTP_200_OK,
         )
 
 

@@ -15,6 +15,7 @@ from dm_logistica.models import (
     Atributo,
     OrdenCompra,
     SolicitudCompra,        # ← NUEVO
+    TipoSolicitud,          # ← NUEVO
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -58,6 +59,12 @@ class BodegaSerializer(serializers.ModelSerializer):
 class BodegaTipoSerializer(serializers.ModelSerializer):
     class Meta:
         model  = BodegaTipo
+        fields = "__all__"
+
+
+class TipoSolicitudSerializer(serializers.ModelSerializer):  # ← NUEVO
+    class Meta:
+        model  = TipoSolicitud
         fields = "__all__"
 
 
@@ -139,9 +146,6 @@ class ModeloProductoCompletoSerializer(serializers.Serializer):
 #  MODELO PRODUCTO – JOIN + IMAGEN BASE64                                   #
 # ------------------------------------------------------------------------- #
 class ModeloProductoCompletoDetalleSerializer(ModeloProductoCompletoSerializer):
-    """
-    Extiende el serializer anterior agregando la imagen codificada en base64.
-    """
     imagen_base64 = serializers.CharField(allow_null=True, read_only=True)
 
 
@@ -165,13 +169,9 @@ class UnidadMedidaSerializer(serializers.ModelSerializer):
 
 
 # ------------------------------------------------------------------------- #
-#  NUEVO SERIALIZER → JOIN TIPO‑MARCA‑PRODUCTO                              #
+#  NUEVO SERIALIZER → JOIN TIPO-MARCA-PRODUCTO                              #
 # ------------------------------------------------------------------------- #
 class TipoMarcaProductoJoinSerializer(serializers.Serializer):
-    """
-    Devuelve la fila de dm_logistica.tipo_marca_producto con los datos
-    descriptivos del tipo y la marca de producto.
-    """
     id_tipo_marca_producto = serializers.IntegerField()
     id_empresa             = serializers.IntegerField()
     codigo_tipo_producto   = serializers.CharField()
@@ -183,10 +183,6 @@ class TipoMarcaProductoJoinSerializer(serializers.Serializer):
 #  --- NUEVO ENDPOINT ATRIBUTOS ------------------------------------------ #
 # ------------------------------------------------------------------------- #
 class ModeloProductoAtributoSerializer(serializers.Serializer):
-    """
-    Serializer para la respuesta del endpoint que entrega
-    los atributos asociados a un modelo de producto.
-    """
     id_modelo_producto = serializers.IntegerField()
     id_empresa         = serializers.IntegerField()
     atributo_id        = serializers.IntegerField()
@@ -197,9 +193,6 @@ class ModeloProductoAtributoSerializer(serializers.Serializer):
 #  ★ NUEVO SERIALIZER → ATRIBUTO (CRUD)                                     #
 # ------------------------------------------------------------------------- #
 class AtributoSerializer(serializers.ModelSerializer):
-    """
-    Serializador base para CRUD sobre dm_logistica.atributo.
-    """
     class Meta:
         model  = Atributo
         fields = ["id", "id_empresa", "id_modelo_producto", "nombre_atributo"]
@@ -209,9 +202,6 @@ class AtributoSerializer(serializers.ModelSerializer):
 #  ★★★ NUEVO SERIALIZER → ORDEN COMPRA (LIST)                               #
 # ------------------------------------------------------------------------- #
 class OrdenCompraSerializer(serializers.ModelSerializer):
-    """
-    Devuelve todos los campos de dm_logistica.orden_compra.
-    """
     class Meta:
         model  = OrdenCompra
         fields = "__all__"
@@ -221,12 +211,10 @@ class OrdenCompraSerializer(serializers.ModelSerializer):
 #  ★★★ NUEVO SERIALIZER → SOLICITUD COMPRA (LIST)                           #
 # ------------------------------------------------------------------------- #
 class SolicitudCompraSerializer(serializers.ModelSerializer):
-    """
-    Serializador para dm_logistica.solicitud_compra.
-    """
     class Meta:
         model  = SolicitudCompra
         fields = "__all__"
+
 
 # ------------------------------------------------------------------------- #
 #  ★★★ NUEVO SERIALIZER → SOLICITUD COMPRA (JOIN COMPLETO)                  #
