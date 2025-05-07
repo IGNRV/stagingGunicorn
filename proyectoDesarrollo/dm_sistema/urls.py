@@ -63,6 +63,7 @@ from .views import (
     SolicitudCompraListAPIView,
     SolicitudCompraJoinListAPIView,
     SolicitudCompraCreateAPIView,
+    SolicitudCompraDetailAPIView,
     # --------------------------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -150,6 +151,7 @@ urlpatterns = [
     path("logistica/solicitudes-compra/", SolicitudCompraListAPIView.as_view(), name="solicitud-compra-listar"),
     path("logistica/solicitudes-compra/joined/", SolicitudCompraJoinListAPIView.as_view(), name="solicitud-compra-join-listar"),
     path("logistica/solicitud-compra/crear/", SolicitudCompraCreateAPIView.as_view(), name="solicitud-compra-crear"),
+    path("logistica/solicitud-compra/detalle/", SolicitudCompraDetailAPIView.as_view(), name="solicitud-compra-detalle"),  # <--- AQUÍ
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/", ComunaListAPIView.as_view(), name="comuna-listar"),

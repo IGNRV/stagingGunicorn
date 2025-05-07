@@ -3615,3 +3615,67 @@ class TipoSolicitudListAPIView(APIView):
             TipoSolicitudSerializer(qs, many=True).data,
             status=status.HTTP_200_OK,
         )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → DETALLE SOLICITUD COMPRA (POST)                     #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/solicitud-compra/detalle/
+
+    Body JSON:
+    {
+        "id": <int>   # id del registro en dm_logistica.solicitud_compra
+    }
+
+    • Requiere la cookie **auth_token**.
+    • Devuelve 404 si la solicitud no existe o pertenece a otra empresa.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 0) Validación de body ----------------------- #
+        solicitud_id = request.data.get("id")
+        if solicitud_id is None:
+            return Response(
+                {"id": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        # ------------------ 2) Empresa activa --------------------------- #
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 3) Recuperamos la solicitud ----------------- #
+        try:
+            solicitud = SolicitudCompra.objects.get(pk=solicitud_id, id_empresa=empresa.id)
+        except SolicitudCompra.DoesNotExist:
+            return Response({"detail": "Solicitud de compra no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # ------------------ 4) Serializamos y respondemos -------------- #
+        return Response(
+            SolicitudCompraSerializer(solicitud).data,
+            status=status.HTTP_200_OK
+        )
