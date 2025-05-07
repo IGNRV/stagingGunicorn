@@ -3045,3 +3045,73 @@ class OrdenCompraListAPIView(APIView):
             OrdenCompraSerializer(qs, many=True).data,
             status=status.HTTP_200_OK
         )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → DETALLE ORDEN COMPRA (POST)                         #
+# ------------------------------------------------------------------------- #
+class OrdenCompraDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/orden-compra/detalle/
+
+    Body JSON:
+    {
+        "id": <int>   # id del registro en dm_logistica.orden_compra
+    }
+
+    • Requiere la cookie **auth_token**.
+    • Devuelve 404 si la orden no existe o pertenece a otra empresa.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # ------------------ 0) Validación de body ----------------------- #
+        orden_id = request.data.get("id")
+        if orden_id is None:
+            return Response(
+                {"id": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Recuperamos la orden --------------------- #
+        try:
+            orden = OrdenCompra.objects.get(pk=orden_id, id_empresa=empresa.id)
+        except OrdenCompra.DoesNotExist:
+            return Response(
+                {"detail": "Orden de compra no encontrada"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # ------------------ 3) Serializamos y respondemos --------------- #
+        return Response(
+            OrdenCompraSerializer(orden).data,
+            status=status.HTTP_200_OK,
+        )

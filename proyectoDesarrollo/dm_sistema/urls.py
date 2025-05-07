@@ -55,7 +55,8 @@ from .views import (
     AtributoCreateAPIView,          # ← NUEVO POST
     AtributoDetailAPIView,
     # -------- ★★★ NUEVO ENDPOINT ORDEN COMPRA ---------- #
-    OrdenCompraListAPIView,         # ← NUEVO GET
+    OrdenCompraListAPIView,         # ← GET
+    OrdenCompraDetailAPIView,       # ← ★ NUEVO POST
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -139,7 +140,8 @@ urlpatterns = [
     path("logistica/atributo/detalle/", AtributoDetailAPIView.as_view(), name="atributo-detalle"),
 
     # ---------------------- ★ NUEVO ENDPOINT ORDEN COMPRA --------------- #
-    path("logistica/ordenes-compra/", OrdenCompraListAPIView.as_view(), name="orden-compra-listar"),
+    path("logistica/ordenes-compra/",        OrdenCompraListAPIView.as_view(),   name="orden-compra-listar"),
+    path("logistica/orden-compra/detalle/",  OrdenCompraDetailAPIView.as_view(), name="orden-compra-detalle"),  # ← ★ NUEVO
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
