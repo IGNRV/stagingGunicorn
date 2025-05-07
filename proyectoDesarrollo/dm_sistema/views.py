@@ -64,6 +64,7 @@ from .serializer import (
     AtributoSerializer,
     OrdenCompraSerializer,
     SolicitudCompraSerializer,
+    SolicitudCompraJoinSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -3357,3 +3358,100 @@ class SolicitudCompraListAPIView(APIView):
             SolicitudCompraSerializer(qs, many=True).data,
             status=status.HTTP_200_OK,
         )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → LISTAR SOLICITUDES DE COMPRA CON JOIN (GET)         #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraJoinListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/solicitudes-compra/joined/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve la lista completa de solicitudes de compra
+      con los datos de operador, tipo y estado,
+      filtradas por la empresa del operador autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # 1) Validación del token en la cookie
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Ejecutamos la consulta JOIN
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  sc.id,
+                  sc.id_empresa,
+                  op.nombres AS operador,
+                  sc.id_aprobador,
+                  esc.descripcion_solicitud_compra AS estado_solicitud_compra,
+                  sc.fecha_registro,
+                  sc.descripcion,
+                  sc.fecha_solicitud_compra,
+                  ts.descripcion           AS tipo_solicitud,
+                  sc.titulo,
+                  sc.ruta_file,
+                  sc.cod_presupuesto,
+                  sc.id_punto_venta,
+                  sc.operador_rechazo,
+                  sc.fecha_rechazo,
+                  sc.motivo_rechazo,
+                  sc.id_requerimiento
+                FROM dm_logistica.solicitud_compra AS sc
+                JOIN dm_sistema.operador AS op
+                  ON sc.id_operador = op.id
+                JOIN dm_logistica.tipo_solicitud AS ts
+                  ON sc.id_tipo_solicitud = ts.id
+                JOIN dm_logistica.estado_solicitud_compra AS esc
+                  ON sc.id_estado_solicitud_compra = esc.id
+                WHERE sc.id_empresa = %s
+                ORDER BY sc.id
+            """, [empresa.id])
+            rows = cursor.fetchall()
+
+        # 3) Mapear filas a dict
+        data = [
+            {
+                "id":                         row[0],
+                "id_empresa":                 row[1],
+                "operador":                   row[2],
+                "id_aprobador":               row[3],
+                "estado_solicitud_compra":    row[4],
+                "fecha_registro":             row[5],
+                "descripcion":                row[6],
+                "fecha_solicitud_compra":     row[7],
+                "tipo_solicitud":             row[8],
+                "titulo":                     row[9],
+                "ruta_file":                  row[10],
+                "cod_presupuesto":            row[11],
+                "id_punto_venta":             row[12],
+                "operador_rechazo":           row[13],
+                "fecha_rechazo":              row[14],
+                "motivo_rechazo":             row[15],
+                "id_requerimiento":           row[16],
+            }
+            for row in rows
+        ]
+
+        # 4) Serializar y responder
+        serializer = SolicitudCompraJoinSerializer(data, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

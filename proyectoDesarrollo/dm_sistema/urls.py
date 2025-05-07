@@ -61,6 +61,7 @@ from .views import (
     OrdenCompraUpdateAPIView,
     # -------- ★★★ NUEVO ENDPOINT SOLICITUD COMPRA ------ #
     SolicitudCompraListAPIView,     # ← NUEVO
+    SolicitudCompraJoinListAPIView, # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -151,7 +152,7 @@ urlpatterns = [
 
     # ---------------------- ★ NUEVO ENDPOINT SOLICITUD COMPRA ----------- #
     path("logistica/solicitudes-compra/", SolicitudCompraListAPIView.as_view(), name="solicitud-compra-listar"),
-
+    path("logistica/solicitudes-compra/joined/", SolicitudCompraJoinListAPIView.as_view(), name="solicitud-compra-join-listar"),
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
     path("comunas/por-region/", ComunaByRegionAPIView.as_view(), name="comuna-por-region"),

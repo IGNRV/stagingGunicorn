@@ -227,3 +227,25 @@ class SolicitudCompraSerializer(serializers.ModelSerializer):
     class Meta:
         model  = SolicitudCompra
         fields = "__all__"
+
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → SOLICITUD COMPRA (JOIN COMPLETO)                  #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraJoinSerializer(serializers.Serializer):
+    id                         = serializers.IntegerField()
+    id_empresa                 = serializers.IntegerField()
+    operador                   = serializers.CharField()
+    id_aprobador               = serializers.IntegerField()
+    estado_solicitud_compra    = serializers.CharField()
+    fecha_registro             = serializers.DateTimeField()
+    descripcion                = serializers.CharField()
+    fecha_solicitud_compra     = serializers.DateTimeField(allow_null=True)
+    tipo_solicitud             = serializers.CharField()
+    titulo                     = serializers.CharField(allow_null=True)
+    ruta_file                  = serializers.CharField(allow_null=True)
+    cod_presupuesto            = serializers.CharField(allow_null=True)
+    id_punto_venta             = serializers.IntegerField(allow_null=True)
+    operador_rechazo           = serializers.IntegerField(allow_null=True)
+    fecha_rechazo              = serializers.DateTimeField(allow_null=True)
+    motivo_rechazo             = serializers.CharField(allow_null=True)
+    id_requerimiento           = serializers.IntegerField(allow_null=True)
