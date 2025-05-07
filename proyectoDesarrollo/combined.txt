@@ -958,7 +958,8 @@ from dm_logistica.models import (
     IdentificadorSerie,
     UnidadMedida,
     Atributo,
-    OrdenCompra,              # ← NUEVO
+    OrdenCompra,
+    SolicitudCompra,        # ← NUEVO
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -1161,6 +1162,18 @@ class OrdenCompraSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → SOLICITUD COMPRA (LIST)                           #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraSerializer(serializers.ModelSerializer):
+    """
+    Serializador para dm_logistica.solicitud_compra.
+    """
+    class Meta:
+        model  = SolicitudCompra
+        fields = "__all__"
+
+
 === ./dm_sistema/admin.py ===
 from django.contrib import admin
 
@@ -1222,12 +1235,15 @@ from .views import (
     ModeloProductoAtributosAPIView,
     # -------- ★★★ NUEVOS ENDPOINTS ATRIBUTO ------------ #
     AtributoUpdateAPIView,          # PUT
-    AtributoCreateAPIView,          # ← NUEVO POST
+    AtributoCreateAPIView,          # POST
     AtributoDetailAPIView,
     # -------- ★★★ NUEVO ENDPOINT ORDEN COMPRA ---------- #
-    OrdenCompraListAPIView,         # ← GET
-    OrdenCompraDetailAPIView,       # ← POST (detalle)
-    OrdenCompraCreateAPIView,       # ← ★★★ NUEVO  (crear)
+    OrdenCompraListAPIView,
+    OrdenCompraDetailAPIView,
+    OrdenCompraCreateAPIView,
+    OrdenCompraUpdateAPIView,
+    # -------- ★★★ NUEVO ENDPOINT SOLICITUD COMPRA ------ #
+    SolicitudCompraListAPIView,     # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -1279,7 +1295,7 @@ urlpatterns = [
     path("logistica/tipo-marca-producto/",         TipoMarcaProductoListAPIView.as_view(),    name="tipo-marca-producto-listar"),
     path("logistica/tipo-marca-producto/editar/",  TipoMarcaProductoUpdateAPIView.as_view(),  name="tipo-marca-producto-editar"),
     path("logistica/tipo-marca-producto/detalle/", TipoMarcaProductoDetailAPIView.as_view(),  name="tipo-marca-producto-detalle"),
-    path("logistica/tipo-marca-producto/eliminar/", TipoMarcaProductoDeleteAPIView.as_view(),   name="tipo-marca-producto-eliminar"),
+    path("logistica/tipo-marca-producto/eliminar/", TipoMarcaProductoDeleteAPIView.as_view(), name="tipo-marca-producto-eliminar"),
 
     # ---------- ★ NUEVO ENDPOINT – JOIN TIPO‑MARCA‑PRODUCTO ------------- #
     path(
@@ -1306,14 +1322,18 @@ urlpatterns = [
     ),
 
     # ---------------------- ENDPOINTS ATRIBUTO -------------------------- #
-    path("logistica/atributo/crear/", AtributoCreateAPIView.as_view(), name="atributo-crear"),
+    path("logistica/atributo/crear/",  AtributoCreateAPIView.as_view(), name="atributo-crear"),
     path("logistica/atributo/editar/", AtributoUpdateAPIView.as_view(), name="atributo-editar"),
     path("logistica/atributo/detalle/", AtributoDetailAPIView.as_view(), name="atributo-detalle"),
 
     # ---------------------- ★ NUEVO ENDPOINT ORDEN COMPRA --------------- #
     path("logistica/ordenes-compra/",        OrdenCompraListAPIView.as_view(),   name="orden-compra-listar"),
     path("logistica/orden-compra/detalle/",  OrdenCompraDetailAPIView.as_view(), name="orden-compra-detalle"),
-    path("logistica/orden-compra/crear/",    OrdenCompraCreateAPIView.as_view(), name="orden-compra-crear"),  # ★★★ NUEVO
+    path("logistica/orden-compra/crear/",    OrdenCompraCreateAPIView.as_view(), name="orden-compra-crear"),
+    path("logistica/orden-compra/editar/",   OrdenCompraUpdateAPIView.as_view(), name="orden-compra-editar"),
+
+    # ---------------------- ★ NUEVO ENDPOINT SOLICITUD COMPRA ----------- #
+    path("logistica/solicitudes-compra/", SolicitudCompraListAPIView.as_view(), name="solicitud-compra-listar"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
@@ -1376,6 +1396,7 @@ from dm_logistica.models import (
     UnidadMedida,
     Atributo,
     OrdenCompra,
+    SolicitudCompra,
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -1399,6 +1420,7 @@ from .serializer import (
     ModeloProductoAtributoSerializer,
     AtributoSerializer,
     OrdenCompraSerializer,
+    SolicitudCompraSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -4540,6 +4562,157 @@ class OrdenCompraCreateAPIView(APIView):
         return Response(
             OrdenCompraSerializer(orden).data,
             status=status.HTTP_201_CREATED,
+        )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → EDITAR ORDEN COMPRA (PUT)                            #
+# ------------------------------------------------------------------------- #
+class OrdenCompraUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/orden-compra/editar/
+
+    Body JSON mínimo:
+    {
+        "id": <int>          # ← obligatorio (PK de dm_logistica.orden_compra)
+        // … cualquier combinación de campos del modelo a modificar …
+    }
+
+    • Requiere la cookie **auth_token**.
+    • Solo se permite actualizar órdenes pertenecientes a la empresa
+      del operador autenticado.
+    • La actualización es **parcial** (solo los campos enviados).
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def put(self, request, *args, **kwargs):
+        # ------------------ 0) ID obligatorio --------------------------- #
+        orden_id = request.data.get("id")
+        if orden_id is None:
+            return Response(
+                {"id": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Recuperamos la orden --------------------- #
+        try:
+            orden = OrdenCompra.objects.get(pk=orden_id, id_empresa=empresa.id)
+        except OrdenCompra.DoesNotExist:
+            return Response(
+                {"detail": "Orden de compra no encontrada"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # ------------------ 3) Preparamos datos a actualizar ------------- #
+        def _normalize(data: Any) -> Dict[str, Any]:
+            if hasattr(data, "items"):
+                d = {k: v for k, v in data.items()}
+            else:
+                d = dict(data)
+            for k, v in d.items():
+                if isinstance(v, list) and v:
+                    d[k] = v[0]
+            return d
+
+        update_data = _normalize(request.data)
+        update_data.pop("id", None)          # no se cambia la PK
+        update_data.pop("id_empresa", None)  # ni la empresa
+
+        serializer = OrdenCompraSerializer(
+            instance=orden,
+            data=update_data,
+            partial=True,                   # actualización parcial
+        )
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 4) Guardamos cambios ------------------------ #
+        with transaction.atomic():
+            orden_actualizada = serializer.save()
+
+        return Response(
+            OrdenCompraSerializer(orden_actualizada).data,
+            status=status.HTTP_200_OK,
+        )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → LISTAR SOLICITUDES DE COMPRA POR EMPRESA (GET)      #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraListAPIView(APIView):
+    """
+    GET /dm_sistema/logistica/solicitudes-compra/
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve todas las solicitudes de compra (`dm_logistica.solicitud_compra`)
+      cuyo `id_empresa` coincide con la empresa asociada al operador
+      autenticado.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    def get(self, request, *args, **kwargs):
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Listamos solicitudes de compra ----------- #
+        qs = (
+            SolicitudCompra.objects
+            .filter(id_empresa=empresa.id)
+            .order_by("-fecha_registro")
+        )
+        return Response(
+            SolicitudCompraSerializer(qs, many=True).data,
+            status=status.HTTP_200_OK,
         )
 
 === ./dm_sistema/models.py ===

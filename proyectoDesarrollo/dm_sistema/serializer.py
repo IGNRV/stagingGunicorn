@@ -13,7 +13,8 @@ from dm_logistica.models import (
     IdentificadorSerie,
     UnidadMedida,
     Atributo,
-    OrdenCompra,              # ← NUEVO
+    OrdenCompra,
+    SolicitudCompra,        # ← NUEVO
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -213,4 +214,16 @@ class OrdenCompraSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model  = OrdenCompra
+        fields = "__all__"
+
+
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → SOLICITUD COMPRA (LIST)                           #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraSerializer(serializers.ModelSerializer):
+    """
+    Serializador para dm_logistica.solicitud_compra.
+    """
+    class Meta:
+        model  = SolicitudCompra
         fields = "__all__"

@@ -52,13 +52,15 @@ from .views import (
     ModeloProductoAtributosAPIView,
     # -------- ★★★ NUEVOS ENDPOINTS ATRIBUTO ------------ #
     AtributoUpdateAPIView,          # PUT
-    AtributoCreateAPIView,          # ← NUEVO POST
+    AtributoCreateAPIView,          # POST
     AtributoDetailAPIView,
     # -------- ★★★ NUEVO ENDPOINT ORDEN COMPRA ---------- #
-    OrdenCompraListAPIView,         # ← GET
-    OrdenCompraDetailAPIView,       # ← POST (detalle)
-    OrdenCompraCreateAPIView,       # ← POST (crear)
-    OrdenCompraUpdateAPIView,       # ← ★★★ NUEVO (editar)
+    OrdenCompraListAPIView,
+    OrdenCompraDetailAPIView,
+    OrdenCompraCreateAPIView,
+    OrdenCompraUpdateAPIView,
+    # -------- ★★★ NUEVO ENDPOINT SOLICITUD COMPRA ------ #
+    SolicitudCompraListAPIView,     # ← NUEVO
     # -------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -110,7 +112,7 @@ urlpatterns = [
     path("logistica/tipo-marca-producto/",         TipoMarcaProductoListAPIView.as_view(),    name="tipo-marca-producto-listar"),
     path("logistica/tipo-marca-producto/editar/",  TipoMarcaProductoUpdateAPIView.as_view(),  name="tipo-marca-producto-editar"),
     path("logistica/tipo-marca-producto/detalle/", TipoMarcaProductoDetailAPIView.as_view(),  name="tipo-marca-producto-detalle"),
-    path("logistica/tipo-marca-producto/eliminar/", TipoMarcaProductoDeleteAPIView.as_view(),   name="tipo-marca-producto-eliminar"),
+    path("logistica/tipo-marca-producto/eliminar/", TipoMarcaProductoDeleteAPIView.as_view(), name="tipo-marca-producto-eliminar"),
 
     # ---------- ★ NUEVO ENDPOINT – JOIN TIPO‑MARCA‑PRODUCTO ------------- #
     path(
@@ -145,7 +147,10 @@ urlpatterns = [
     path("logistica/ordenes-compra/",        OrdenCompraListAPIView.as_view(),   name="orden-compra-listar"),
     path("logistica/orden-compra/detalle/",  OrdenCompraDetailAPIView.as_view(), name="orden-compra-detalle"),
     path("logistica/orden-compra/crear/",    OrdenCompraCreateAPIView.as_view(), name="orden-compra-crear"),
-    path("logistica/orden-compra/editar/",   OrdenCompraUpdateAPIView.as_view(), name="orden-compra-editar"),  # ← NUEVO
+    path("logistica/orden-compra/editar/",   OrdenCompraUpdateAPIView.as_view(), name="orden-compra-editar"),
+
+    # ---------------------- ★ NUEVO ENDPOINT SOLICITUD COMPRA ----------- #
+    path("logistica/solicitudes-compra/", SolicitudCompraListAPIView.as_view(), name="solicitud-compra-listar"),
 
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/",            ComunaListAPIView.as_view(),     name="comuna-listar"),
