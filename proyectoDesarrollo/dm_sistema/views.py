@@ -3204,3 +3204,105 @@ class OrdenCompraCreateAPIView(APIView):
             OrdenCompraSerializer(orden).data,
             status=status.HTTP_201_CREATED,
         )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → EDITAR ORDEN COMPRA (PUT)                            #
+# ------------------------------------------------------------------------- #
+class OrdenCompraUpdateAPIView(APIView):
+    """
+    PUT /dm_sistema/logistica/orden-compra/editar/
+
+    Body JSON mínimo:
+    {
+        "id": <int>          # ← obligatorio (PK de dm_logistica.orden_compra)
+        // … cualquier combinación de campos del modelo a modificar …
+    }
+
+    • Requiere la cookie **auth_token**.
+    • Solo se permite actualizar órdenes pertenecientes a la empresa
+      del operador autenticado.
+    • La actualización es **parcial** (solo los campos enviados).
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def put(self, request, *args, **kwargs):
+        # ------------------ 0) ID obligatorio --------------------------- #
+        orden_id = request.data.get("id")
+        if orden_id is None:
+            return Response(
+                {"id": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 1) Verificación de token -------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ------------------ 2) Recuperamos la orden --------------------- #
+        try:
+            orden = OrdenCompra.objects.get(pk=orden_id, id_empresa=empresa.id)
+        except OrdenCompra.DoesNotExist:
+            return Response(
+                {"detail": "Orden de compra no encontrada"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # ------------------ 3) Preparamos datos a actualizar ------------- #
+        def _normalize(data: Any) -> Dict[str, Any]:
+            if hasattr(data, "items"):
+                d = {k: v for k, v in data.items()}
+            else:
+                d = dict(data)
+            for k, v in d.items():
+                if isinstance(v, list) and v:
+                    d[k] = v[0]
+            return d
+
+        update_data = _normalize(request.data)
+        update_data.pop("id", None)          # no se cambia la PK
+        update_data.pop("id_empresa", None)  # ni la empresa
+
+        serializer = OrdenCompraSerializer(
+            instance=orden,
+            data=update_data,
+            partial=True,                   # actualización parcial
+        )
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ------------------ 4) Guardamos cambios ------------------------ #
+        with transaction.atomic():
+            orden_actualizada = serializer.save()
+
+        return Response(
+            OrdenCompraSerializer(orden_actualizada).data,
+            status=status.HTTP_200_OK,
+        )
