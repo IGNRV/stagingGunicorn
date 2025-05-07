@@ -3115,3 +3115,92 @@ class OrdenCompraDetailAPIView(APIView):
             OrdenCompraSerializer(orden).data,
             status=status.HTTP_200_OK,
         )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → CREAR ORDEN DE COMPRA (POST)                        #
+# ------------------------------------------------------------------------- #
+class OrdenCompraCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/orden-compra/crear/
+
+    • El `id_empresa` que venga en el body será ignorado; el valor correcto
+      se extrae de la empresa asociada al operador autenticado mediante la
+      cookie **auth_token**.
+
+    Body JSON de ejemplo:
+    {
+        "id_cotizacion": 10001,
+        "id_solicitante": 1,
+        "id_operador": 1,
+        "id_estado_orden_compra": 2,
+        "id_solicitud_compra": 1,
+        "id_proveedor": 1,
+        "folio": "OC-27-0001",
+        "fecha": "2025-05-20 09:00:00",
+        "neto": 1500000,
+        "iva": 285000,
+        "monto_total": 1785000,
+        "observacion": "Compra cables y conectores categoría 6",
+        "fecha_entrega": "2025-05-30 00:00:00",
+        "id_aprobador": 2,
+        "archivo": "/files/oc/70001.pdf",
+        "notas_adicionales": "Entregar en Bodega Central",
+        "id_requerimiento": 3001,
+        "id_tipo_moneda": 1,
+        "operador_anula": 1,
+        "fecha_anula": null,
+        "motivo_anula": null,
+        "desviacion": "OK"
+    }
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # ---------------- 1) Verificación de token ---------------------- #
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # ---------------- 2) Normalizamos y ajustamos data -------------- #
+        data = _normalize_request_data(request.data)
+        data["id_empresa"] = empresa.id          # ← forzamos id_empresa correcto
+
+        serializer = OrdenCompraSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # ---------------- 3) Guardamos registro ------------------------- #
+        with transaction.atomic():
+            orden = serializer.save()
+
+        return Response(
+            OrdenCompraSerializer(orden).data,
+            status=status.HTTP_201_CREATED,
+        )
