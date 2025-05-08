@@ -1,178 +1,5 @@
 
 
-=== ./dm_requerimientos/admin.py ===
-from django.contrib import admin
-
-# Register your models here.
-
-
-=== ./dm_requerimientos/__init__.py ===
-
-
-=== ./dm_requerimientos/migrations/__init__.py ===
-
-
-=== ./dm_requerimientos/views.py ===
-from django.shortcuts import render
-
-# Create your views here.
-
-
-=== ./dm_requerimientos/models.py ===
-# This is an auto-generated Django model module.
-# You'll have to do the following manually to clean this up:
-#   * Rearrange models' order
-#   * Make sure each model has one field with primary_key=True
-#   * Make sure each ForeignKey and OneToOneField has `on_delete` set to the desired behavior
-#   * Remove `managed = False` lines if you wish to allow Django to create, modify, and delete the table
-# Feel free to rename the models, but don't rename db_table values or field names.
-from django.db import models
-
-
-class Documento(models.Model):
-    id_empresa = models.IntegerField()
-    id_requerimiento = models.ForeignKey('Requerimientos', models.DO_NOTHING, db_column='id_requerimiento')
-    nombre = models.CharField(max_length=60)
-    path = models.CharField(max_length=100)
-    fecha = models.DateTimeField()
-
-    class Meta:
-        managed = False
-        db_table = '"dm_requerimientos"."documento"'
-
-
-class Requerimientos(models.Model):
-    id_empresa = models.IntegerField()
-    id_requerimientos_elementos = models.ForeignKey('RequerimientosElementos', models.DO_NOTHING, db_column='id_requerimientos_elementos')
-    id_requerimientos_tipos = models.ForeignKey('RequerimientosTipos', models.DO_NOTHING, db_column='id_requerimientos_tipos')
-    id_operador_origen = models.IntegerField()
-    id_operador_asignado = models.IntegerField()
-    id_operador_cierre = models.IntegerField()
-    id_grupo_origen = models.IntegerField()
-    id_grupo_actual = models.IntegerField()
-    id_requerimientos_estados = models.ForeignKey('RequerimientosEstados', models.DO_NOTHING, db_column='id_requerimientos_estados', blank=True, null=True)
-    id_cliente = models.IntegerField(blank=True, null=True)
-    id_contrato = models.IntegerField(blank=True, null=True)
-    id_suscriptor_producto_bodega = models.IntegerField(blank=True, null=True)
-    solucion_en_linea = models.IntegerField()
-    tipo_requerimiento = models.CharField(max_length=15)
-    descripcion = models.TextField(blank=True, null=True)
-    actividad = models.TextField(blank=True, null=True)
-    fecha_creacion = models.DateTimeField()
-    fecha_ultima_modificacion = models.DateTimeField(blank=True, null=True)
-    fecha_cierre = models.DateTimeField(blank=True, null=True)
-    prioridad = models.IntegerField(blank=True, null=True)
-    numero_correos_enviados = models.CharField(max_length=6, blank=True, null=True)
-    fecha_envio_ultimo_correo = models.DateTimeField(blank=True, null=True)
-    nivel_requerimiento = models.CharField(max_length=100, blank=True, null=True)
-    confirmar_lectura = models.IntegerField()
-    fecha_confirma_lectura = models.DateTimeField(blank=True, null=True)
-    id_punto_venta = models.IntegerField()
-    hh = models.FloatField(blank=True, null=True)
-    hh_cobro = models.FloatField(blank=True, null=True)
-    fecha_agenda = models.DateField(blank=True, null=True)
-    id_ejecutivo = models.IntegerField()
-    id_ejecutivo_retiro = models.IntegerField()
-
-    class Meta:
-        managed = False
-        db_table = '"dm_requerimientos"."requerimientos"'
-
-
-class RequerimientosAsignacion(models.Model):
-    id_empresa = models.IntegerField()
-    id_requerimiento = models.ForeignKey(Requerimientos, models.DO_NOTHING, db_column='id_requerimiento')
-    id_grupo = models.IntegerField()
-    inicio_asignacion = models.DateTimeField()
-    fin_asignacion = models.DateTimeField(blank=True, null=True)
-    id_requerimientos_estados = models.ForeignKey('RequerimientosEstados', models.DO_NOTHING, db_column='id_requerimientos_estados')
-
-    class Meta:
-        managed = False
-        db_table = '"dm_requerimientos"."requerimientos_asignacion"'
-
-
-class RequerimientosDetalle(models.Model):
-    id_empresa = models.IntegerField()
-    id_requerimiento = models.ForeignKey(Requerimientos, models.DO_NOTHING, db_column='id_requerimiento')
-    tipo = models.CharField(max_length=255, blank=True, null=True)
-    detalle = models.CharField(max_length=255)
-
-    class Meta:
-        managed = False
-        db_table = '"dm_requerimientos"."requerimientos_detalle"'
-
-
-class RequerimientosElementos(models.Model):
-    id_empresa = models.IntegerField()
-    id_requerimientos_tipos = models.ForeignKey('RequerimientosTipos', models.DO_NOTHING, db_column='id_requerimientos_tipos')
-    etiqueta_elemento = models.CharField(max_length=255)
-    envia_correo = models.IntegerField()
-    asignable = models.IntegerField()
-    modificable = models.IntegerField()
-    requiere_documento = models.IntegerField()
-    max_envio_correo = models.IntegerField()
-    intervalo_envio_correo = models.IntegerField()
-    boton_accion = models.CharField(max_length=50, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = '"dm_requerimientos"."requerimientos_elementos"'
-
-
-class RequerimientosEstados(models.Model):
-    nombre_estado = models.CharField(max_length=20)
-
-    class Meta:
-        managed = False
-        db_table = '"dm_requerimientos"."requerimientos_estados"'
-
-
-class RequerimientosTipos(models.Model):
-    id_empresa = models.IntegerField()
-    id_grupo = models.IntegerField()
-    etiqueta = models.CharField(max_length=255)
-    asignable = models.IntegerField()
-    modificable = models.IntegerField()
-
-    class Meta:
-        managed = False
-        db_table = '"dm_requerimientos"."requerimientos_tipos"'
-
-
-class Sla(models.Model):
-    id_empresa = models.IntegerField()
-    id_requerimientos_estados = models.ForeignKey(RequerimientosEstados, models.DO_NOTHING, db_column='id_requerimientos_estados')
-    id_operador1 = models.IntegerField(blank=True, null=True)
-    tiempo_limite1 = models.IntegerField(blank=True, null=True)
-    color1 = models.CharField(max_length=7, blank=True, null=True)
-    id_operador2 = models.IntegerField(blank=True, null=True)
-    tiempo_limite2 = models.IntegerField(blank=True, null=True)
-    color2 = models.CharField(max_length=7, blank=True, null=True)
-    id_operador3 = models.IntegerField(blank=True, null=True)
-    tiempo_limite3 = models.IntegerField(blank=True, null=True)
-    color3 = models.CharField(max_length=7, blank=True, null=True)
-
-    class Meta:
-        managed = False
-        db_table = 'sla'
-
-
-=== ./dm_requerimientos/tests.py ===
-from django.test import TestCase
-
-# Create your tests here.
-
-
-=== ./dm_requerimientos/apps.py ===
-from django.apps import AppConfig
-
-
-class DmRequerimientosConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'dm_requerimientos'
-
-
 === ./manage.py ===
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
@@ -957,8 +784,10 @@ from dm_logistica.models import (
     UnidadMedida,
     Atributo,
     OrdenCompra,
-    SolicitudCompra,        # ← NUEVO
-    TipoSolicitud,          # ← NUEVO
+    SolicitudCompra,
+    TipoSolicitud,
+    Cotizacion,
+    DetalleCotizacion,
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -978,13 +807,13 @@ class OperadorVerificarSerializer(serializers.Serializer):
 
 class OperadorSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Operador
+        model = Operador
         fields = "__all__"
 
 
 class ProveedorSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Proveedor
+        model = Proveedor
         fields = [
             "id", "giro", "descrip_giro", "id_empresa", "rut",
             "nombre_rs", "nombre_fantasia", "web", "fecha_alta",
@@ -995,25 +824,25 @@ class ProveedorSerializer(serializers.ModelSerializer):
 
 class BodegaSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Bodega
+        model = Bodega
         fields = "__all__"
 
 
 class BodegaTipoSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = BodegaTipo
+        model = BodegaTipo
         fields = "__all__"
 
 
-class TipoSolicitudSerializer(serializers.ModelSerializer):  # ← NUEVO
+class TipoSolicitudSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = TipoSolicitud
+        model = TipoSolicitud
         fields = "__all__"
 
 
 class TipoProductoSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = TipoProducto
+        model = TipoProducto
         fields = [
             "id", "codigo_tipo_producto", "id_empresa", "nombre_tipo_producto",
             "estado", "correlativo_desde", "correlativo_hasta",
@@ -1022,7 +851,7 @@ class TipoProductoSerializer(serializers.ModelSerializer):
 
 class MarcaProductoSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = MarcaProducto
+        model = MarcaProducto
         fields = [
             "id", "id_empresa", "nombre_marca_producto", "estado",
         ]
@@ -1030,7 +859,7 @@ class MarcaProductoSerializer(serializers.ModelSerializer):
 
 class TipoMarcaProductoSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = TipoMarcaProducto
+        model = TipoMarcaProducto
         fields = [
             "id", "id_empresa", "id_tipo_producto", "id_marca_producto",
         ]
@@ -1038,13 +867,13 @@ class TipoMarcaProductoSerializer(serializers.ModelSerializer):
 
 class ComunaSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Comuna
+        model = Comuna
         fields = "__all__"
 
 
 class RegionSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Region
+        model = Region
         fields = "__all__"
 
 
@@ -1201,6 +1030,7 @@ class CotizacionJoinSerializer(serializers.Serializer):
     operador             = serializers.CharField()
     id_tipo_moneda       = serializers.IntegerField(allow_null=True)
 
+
 class CotizacionByIdSerializer(serializers.Serializer):
     id                       = serializers.IntegerField()
     id_empresa               = serializers.IntegerField()
@@ -1216,6 +1046,88 @@ class CotizacionByIdSerializer(serializers.Serializer):
     folio                    = serializers.CharField(allow_null=True)
     operador_nombre_completo = serializers.CharField()
     id_tipo_moneda           = serializers.IntegerField(allow_null=True)
+
+
+class DetalleCotizacionSerializer(serializers.Serializer):
+    id                  = serializers.IntegerField()
+    id_empresa          = serializers.IntegerField()
+    id_cotizacion       = serializers.IntegerField()
+    proveedor           = serializers.CharField()
+    fecha_registro      = serializers.DateTimeField()
+    cantidad            = serializers.CharField(allow_null=True)
+    detalles            = serializers.CharField(allow_null=True)
+    descuento_unitario  = serializers.FloatField(allow_null=True)
+    precio_unitario     = serializers.FloatField(allow_null=True)
+    id_modelo_producto  = serializers.IntegerField(allow_null=True)
+    tipo_descuento      = serializers.CharField(allow_null=True)
+    tipo_item           = serializers.IntegerField(allow_null=True)
+
+
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → CREAR COTIZACIÓN CON DETALLES                    #
+# ------------------------------------------------------------------------- #
+class DetalleCotizacionCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para cada línea de detalle_cotizacion en la inserción masiva.
+    Los campos id_empresa e id_cotizacion los rellena automáticamente la view.
+    """
+    class Meta:
+        model = DetalleCotizacion
+        fields = [
+            "id_proveedor",
+            "fecha_registro",
+            "cantidad",
+            "detalles",
+            "descuento_unitario",
+            "precio_unitario",
+            "id_modelo_producto",
+            "tipo_descuento",
+            "tipo_item",
+        ]
+
+
+class CotizacionCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para crear una cotización junto con uno o varios detalles.
+    Ahora incluye id_empresa e id_operador para evitar errores de NOT NULL,
+    y marca los campos necesarios como sólo escritura.
+    """
+    id_empresa = serializers.IntegerField(write_only=True)
+    id_operador = serializers.IntegerField(write_only=True)
+    detalles = DetalleCotizacionCreateSerializer(many=True, write_only=True)
+
+    class Meta:
+        model = Cotizacion
+        fields = [
+            "id",  # ahora también exponemos el id en la respuesta
+            "id_proveedor",
+            "id_solicitud_compra",
+            "fecha_cotizacion",
+            "total",
+            "validez_cotizacion",
+            "archivo",
+            "estado_cotizacion",
+            "estado_detalle",
+            "iva",
+            "folio",
+            "id_tipo_moneda",
+            "id_empresa",
+            "id_operador",
+            "detalles",
+        ]
+        read_only_fields = ["id"]
+
+    def create(self, validated_data):
+        detalles_data = validated_data.pop("detalles")
+        cotizacion = Cotizacion.objects.create(**validated_data)
+        for det in detalles_data:
+            DetalleCotizacion.objects.create(
+                id_empresa=cotizacion.id_empresa,
+                id_cotizacion=cotizacion,
+                **det
+            )
+        return cotizacion
+
 
 === ./dm_sistema/admin.py ===
 from django.contrib import admin
@@ -1302,6 +1214,8 @@ from .views import (
     # -------- LOGÍSTICA – TIPOS DE SOLICITUD -------- #
     # He movido este endpoint para que responda en /logistica/tipos-solicitud/
     TipoSolicitudListAPIView,
+    DetalleCotizacionByCotizacionAPIView,
+    CotizacionCreateAPIView,        # ← NUEVO ENDPOINT IMPORTADO
 )
 
 urlpatterns = [
@@ -1381,6 +1295,12 @@ urlpatterns = [
     path("logistica/solicitudes-compra/joined/", SolicitudCompraJoinListAPIView.as_view(), name="solicitud-compra-join-listar"),
     path("logistica/solicitud-compra/crear/", SolicitudCompraCreateAPIView.as_view(), name="solicitud-compra-crear"),
     path("logistica/solicitud-compra/detalle/", SolicitudCompraJoinDetailAPIView.as_view(), name="solicitud-compra-join-detalle"),
+    # ← RUTA DE CREACIÓN DE COTIZACIÓN + DETALLES
+    path(
+        "logistica/cotizacion/crear/",
+        CotizacionCreateAPIView.as_view(),
+        name="cotizacion-crear"
+    ),
      # ---------- ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD ---------- #
     path("logistica/cotizaciones-por-solicitud/", CotizacionBySolicitudAPIView.as_view(), name="cotizaciones-por-solicitud"),
     path(
@@ -1401,6 +1321,12 @@ urlpatterns = [
 
     # -------- SISTEMA – TIPOS DE SOLICITUD (ajustado) -------- #
     path("logistica/tipos-solicitud/", TipoSolicitudListAPIView.as_view(), name="tipo-solicitud-listar"),
+    # ★ Nuevo endpoint: detalle de cotización por id_cotizacion
+    path(
+        "logistica/detalle-cotizacion/",
+        DetalleCotizacionByCotizacionAPIView.as_view(),
+        name="detalle-cotizacion-by-cotizacion"
+    ),
 ]
 
 
@@ -1456,6 +1382,8 @@ from dm_logistica.models import (
     OrdenCompra,
     SolicitudCompra,
     TipoSolicitud,
+    Cotizacion,            # ← MODELO
+    DetalleCotizacion,     # ← MODELO
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -1483,7 +1411,9 @@ from .serializer import (
     SolicitudCompraJoinSerializer,
     TipoSolicitudSerializer,
     CotizacionJoinSerializer,
-    CotizacionByIdSerializer
+    CotizacionByIdSerializer,
+    DetalleCotizacionSerializer,
+    CotizacionCreateSerializer,       # ← SERIALIZER DE CREACIÓN
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -5398,6 +5328,197 @@ class CotizacionByIdAPIView(APIView):
         # 5) Serializar y devolver
         serializer = CotizacionByIdSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → DETALLE COTIZACIONES POR COTIZACION (POST)           #
+# ------------------------------------------------------------------------- #
+class DetalleCotizacionByCotizacionAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/detalle-cotizacion/
+
+    Body JSON:
+    {
+        "id_cotizacion": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Filtra por empresa del operador y por id_cotizacion.
+    • Devuelve el JOIN entre detalle_cotizacion y proveedor.
+    """
+    authentication_classes = []
+    permission_classes     = []
+    parser_classes         = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 0) Validación body
+        cot_id = request.data.get("id_cotizacion")
+        if cot_id is None:
+            return Response(
+                {"id_cotizacion": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1) Token / sesión
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        sesion = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada está inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Ejecución de la consulta
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  dc.id,
+                  dc.id_empresa,
+                  dc.id_cotizacion,
+                  p.nombre_fantasia   AS proveedor,
+                  dc.fecha_registro,
+                  dc.cantidad,
+                  dc.detalles,
+                  dc.descuento_unitario,
+                  dc.precio_unitario,
+                  dc.id_modelo_producto,
+                  dc.tipo_descuento,
+                  dc.tipo_item
+                FROM dm_logistica.detalle_cotizacion AS dc
+                JOIN dm_logistica.proveedor       AS p
+                  ON dc.id_proveedor = p.id
+                WHERE dc.id_empresa    = %s
+                  AND dc.id_cotizacion = %s
+                ORDER BY dc.id
+            """, [empresa.id, cot_id])
+            rows = cursor.fetchall()
+
+        # 3) Mapeo a lista de dicts
+        data = [
+            {
+                "id":                  r[0],
+                "id_empresa":          r[1],
+                "id_cotizacion":       r[2],
+                "proveedor":           r[3],
+                "fecha_registro":      r[4],
+                "cantidad":            r[5],
+                "detalles":            r[6],
+                "descuento_unitario":  r[7],
+                "precio_unitario":     r[8],
+                "id_modelo_producto":  r[9],
+                "tipo_descuento":      r[10],
+                "tipo_item":           r[11],
+            }
+            for r in rows
+        ]
+
+        # 4) Serializar y devolver
+        serializer = DetalleCotizacionSerializer(data, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+class CotizacionCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/cotizacion/crear/
+
+    Body JSON de ejemplo:
+    {
+        "id_proveedor": <int>,
+        "id_solicitud_compra": <int>,
+        "fecha_cotizacion": "YYYY-MM-DD HH:MM:SS",
+        "total": <float>,
+        "validez_cotizacion": <int>,
+        "archivo": "<ruta_opcional>",
+        "estado_cotizacion": <int>,
+        "estado_detalle": <int>,
+        "iva": <int>,
+        "folio": "<str>",
+        "id_tipo_moneda": <int>,
+        "detalles": [
+            {
+                "id_proveedor": <int>,
+                "fecha_registro": "YYYY-MM-DD HH:MM:SS",
+                "cantidad": "<str>",
+                "detalles": "<str>",
+                "descuento_unitario": <float>,
+                "precio_unitario": <float>,
+                "id_modelo_producto": <int>,
+                "tipo_descuento": "<str>",
+                "tipo_item": <int>
+            },
+            …
+        ]
+    }
+
+    • Forzamos siempre id_empresa de la cotización y de cada detalle
+      al de la empresa asociada al token de sesión.
+    • Igualmente, forzamos id_operador de la cotización al operador en sesión.
+    • Inserta la cotización y todos sus detalles en una sola transacción.
+    • Devuelve 201 + el JSON de la cotización (con sus detalles) si todo OK.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+    parser_classes         = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 1) Verificación de token y sesión
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"}, status=status.HTTP_401_UNAUTHORIZED)
+        sesion = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion:
+            return Response({"detail": "Token inválido o sesión expirada"}, status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."}, status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Preparamos payload y forzamos id_empresa e id_operador correctos
+        data = request.data.copy()
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+        data.pop("id_operador", None)
+        data["id_operador"] = sesion.id_operador.id
+
+        # 3) Serializamos & validamos
+        serializer = CotizacionCreateSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4) Guardamos todo dentro de una transacción
+        with transaction.atomic():
+            cot = serializer.save()
+
+        # ────────────────────────────────────────────────────────────────
+        #  AQUI EMPIEZAN LAS LÍNEAS NUEVAS PARA INCLUIR EL 'detalle'
+        # ────────────────────────────────────────────────────────────────
+
+        # 5) Serializamos la cabecera recién creada
+        cabecera_data = CotizacionCreateSerializer(cot).data
+
+        # 6) Recuperamos los detalles asociados y los serializamos
+        detalles_qs = DetalleCotizacion.objects.filter(id_cotizacion=cot)
+        detalles_data = DetalleCotizacionSerializer(detalles_qs, many=True).data
+
+        # 7) Inyectamos el array de detalles en la respuesta
+        cabecera_data['detalles'] = detalles_data
+
+        # ────────────────────────────────────────────────────────────────
+        #  FIN DE LAS LÍNEAS NUEVAS
+        # ────────────────────────────────────────────────────────────────
+
+        # 8) Devolvemos 201 y el payload creado (incluye ahora 'detalles')
+        return Response(cabecera_data, status=status.HTTP_201_CREATED)
 
 === ./dm_sistema/models.py ===
 # This is an auto-generated Django model module.

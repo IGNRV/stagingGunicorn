@@ -43,6 +43,8 @@ from dm_logistica.models import (
     OrdenCompra,
     SolicitudCompra,
     TipoSolicitud,
+    Cotizacion,            # ← MODELO
+    DetalleCotizacion,     # ← MODELO
 )
 from .models import Operador, Sesiones, SesionesActivas, Comuna, Region
 from .serializer import (
@@ -72,6 +74,7 @@ from .serializer import (
     CotizacionJoinSerializer,
     CotizacionByIdSerializer,
     DetalleCotizacionSerializer,
+    CotizacionCreateSerializer,       # ← SERIALIZER DE CREACIÓN
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -4081,3 +4084,87 @@ class DetalleCotizacionByCotizacionAPIView(APIView):
         # 4) Serializar y devolver
         serializer = DetalleCotizacionSerializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → CREAR COTIZACIÓN CON DETALLES (POST)                #
+# ------------------------------------------------------------------------- #
+class CotizacionCreateAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/cotizacion/crear/
+
+    Body JSON de ejemplo:
+    {
+        "id_proveedor": <int>,
+        "id_solicitud_compra": <int>,
+        "fecha_cotizacion": "YYYY-MM-DD HH:MM:SS",
+        "total": <float>,
+        "validez_cotizacion": <int>,
+        "archivo": "<ruta_opcional>",
+        "estado_cotizacion": <int>,
+        "estado_detalle": <int>,
+        "iva": <int>,
+        "folio": "<str>",
+        "id_tipo_moneda": <int>,
+        "detalles": [
+            {
+                "id_proveedor": <int>,
+                "fecha_registro": "YYYY-MM-DD HH:MM:SS",
+                "cantidad": "<str>",
+                "detalles": "<str>",
+                "descuento_unitario": <float>,
+                "precio_unitario": <float>,
+                "id_modelo_producto": <int>,
+                "tipo_descuento": "<str>",
+                "tipo_item": <int>
+            },
+            …
+        ]
+    }
+
+    • Forzamos siempre id_empresa de la cotización y de cada detalle
+      al de la empresa asociada al token de sesión.
+    • Igualmente, forzamos id_operador de la cotización al operador en sesión.
+    • Inserta la cotización y todos sus detalles en una sola transacción.
+    • Devuelve 201 + el JSON de la cotización (con sus detalles) si todo OK.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+    parser_classes         = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 1) Verificación de token y sesión
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"}, status=status.HTTP_401_UNAUTHORIZED)
+        sesion = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion:
+            return Response({"detail": "Token inválido o sesión expirada"}, status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."}, status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Preparamos payload y forzamos id_empresa e id_operador correctos
+        data = request.data.copy()
+        data.pop("id_empresa", None)
+        data["id_empresa"] = empresa.id
+        data.pop("id_operador", None)
+        data["id_operador"] = sesion.id_operador.id
+
+        # 3) Serializamos & validamos
+        serializer = CotizacionCreateSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # 4) Guardamos todo dentro de una transacción
+        with transaction.atomic():
+            cot = serializer.save()
+
+        # 5) Devolvemos 201 y el payload creado (incluye detalles)
+        return Response(
+            CotizacionCreateSerializer(cot).data,
+            status=status.HTTP_201_CREATED
+        )

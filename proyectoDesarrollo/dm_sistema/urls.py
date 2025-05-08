@@ -77,6 +77,7 @@ from .views import (
     # He movido este endpoint para que responda en /logistica/tipos-solicitud/
     TipoSolicitudListAPIView,
     DetalleCotizacionByCotizacionAPIView,
+    CotizacionCreateAPIView,        # ← NUEVO ENDPOINT IMPORTADO
 )
 
 urlpatterns = [
@@ -156,6 +157,12 @@ urlpatterns = [
     path("logistica/solicitudes-compra/joined/", SolicitudCompraJoinListAPIView.as_view(), name="solicitud-compra-join-listar"),
     path("logistica/solicitud-compra/crear/", SolicitudCompraCreateAPIView.as_view(), name="solicitud-compra-crear"),
     path("logistica/solicitud-compra/detalle/", SolicitudCompraJoinDetailAPIView.as_view(), name="solicitud-compra-join-detalle"),
+    # ← RUTA DE CREACIÓN DE COTIZACIÓN + DETALLES
+    path(
+        "logistica/cotizacion/crear/",
+        CotizacionCreateAPIView.as_view(),
+        name="cotizacion-crear"
+    ),
      # ---------- ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD ---------- #
     path("logistica/cotizaciones-por-solicitud/", CotizacionBySolicitudAPIView.as_view(), name="cotizaciones-por-solicitud"),
     path(

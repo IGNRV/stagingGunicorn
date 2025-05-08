@@ -14,8 +14,10 @@ from dm_logistica.models import (
     UnidadMedida,
     Atributo,
     OrdenCompra,
-    SolicitudCompra,        # ← NUEVO
-    TipoSolicitud,          # ← NUEVO
+    SolicitudCompra,
+    TipoSolicitud,
+    Cotizacion,
+    DetalleCotizacion,
 )
 from dm_logistica.serializer import ModeloProductoSerializer
 
@@ -35,13 +37,13 @@ class OperadorVerificarSerializer(serializers.Serializer):
 
 class OperadorSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Operador
+        model = Operador
         fields = "__all__"
 
 
 class ProveedorSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Proveedor
+        model = Proveedor
         fields = [
             "id", "giro", "descrip_giro", "id_empresa", "rut",
             "nombre_rs", "nombre_fantasia", "web", "fecha_alta",
@@ -52,25 +54,25 @@ class ProveedorSerializer(serializers.ModelSerializer):
 
 class BodegaSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Bodega
+        model = Bodega
         fields = "__all__"
 
 
 class BodegaTipoSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = BodegaTipo
+        model = BodegaTipo
         fields = "__all__"
 
 
-class TipoSolicitudSerializer(serializers.ModelSerializer):  # ← NUEVO
+class TipoSolicitudSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = TipoSolicitud
+        model = TipoSolicitud
         fields = "__all__"
 
 
 class TipoProductoSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = TipoProducto
+        model = TipoProducto
         fields = [
             "id", "codigo_tipo_producto", "id_empresa", "nombre_tipo_producto",
             "estado", "correlativo_desde", "correlativo_hasta",
@@ -79,7 +81,7 @@ class TipoProductoSerializer(serializers.ModelSerializer):
 
 class MarcaProductoSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = MarcaProducto
+        model = MarcaProducto
         fields = [
             "id", "id_empresa", "nombre_marca_producto", "estado",
         ]
@@ -87,7 +89,7 @@ class MarcaProductoSerializer(serializers.ModelSerializer):
 
 class TipoMarcaProductoSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = TipoMarcaProducto
+        model = TipoMarcaProducto
         fields = [
             "id", "id_empresa", "id_tipo_producto", "id_marca_producto",
         ]
@@ -95,13 +97,13 @@ class TipoMarcaProductoSerializer(serializers.ModelSerializer):
 
 class ComunaSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Comuna
+        model = Comuna
         fields = "__all__"
 
 
 class RegionSerializer(serializers.ModelSerializer):
     class Meta:
-        model  = Region
+        model = Region
         fields = "__all__"
 
 
@@ -258,6 +260,7 @@ class CotizacionJoinSerializer(serializers.Serializer):
     operador             = serializers.CharField()
     id_tipo_moneda       = serializers.IntegerField(allow_null=True)
 
+
 class CotizacionByIdSerializer(serializers.Serializer):
     id                       = serializers.IntegerField()
     id_empresa               = serializers.IntegerField()
@@ -274,6 +277,7 @@ class CotizacionByIdSerializer(serializers.Serializer):
     operador_nombre_completo = serializers.CharField()
     id_tipo_moneda           = serializers.IntegerField(allow_null=True)
 
+
 class DetalleCotizacionSerializer(serializers.Serializer):
     id                  = serializers.IntegerField()
     id_empresa          = serializers.IntegerField()
@@ -288,4 +292,68 @@ class DetalleCotizacionSerializer(serializers.Serializer):
     tipo_descuento      = serializers.CharField(allow_null=True)
     tipo_item           = serializers.IntegerField(allow_null=True)
 
-    
+
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → CREAR COTIZACIÓN CON DETALLES                    #
+# ------------------------------------------------------------------------- #
+class DetalleCotizacionCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para cada línea de detalle_cotizacion en la inserción masiva.
+    Los campos id_empresa e id_cotizacion los rellena automáticamente la view.
+    """
+    class Meta:
+        model = DetalleCotizacion
+        fields = [
+            "id_proveedor",
+            "fecha_registro",
+            "cantidad",
+            "detalles",
+            "descuento_unitario",
+            "precio_unitario",
+            "id_modelo_producto",
+            "tipo_descuento",
+            "tipo_item",
+        ]
+
+
+class CotizacionCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para crear una cotización junto con uno o varios detalles.
+    Ahora incluye id_empresa e id_operador para evitar errores de NOT NULL,
+    y marca los campos necesarios como sólo escritura.
+    """
+    id_empresa = serializers.IntegerField(write_only=True)
+    id_operador = serializers.IntegerField(write_only=True)
+    detalles = DetalleCotizacionCreateSerializer(many=True, write_only=True)
+
+    class Meta:
+        model = Cotizacion
+        fields = [
+            "id",  # ahora también exponemos el id en la respuesta
+            "id_proveedor",
+            "id_solicitud_compra",
+            "fecha_cotizacion",
+            "total",
+            "validez_cotizacion",
+            "archivo",
+            "estado_cotizacion",
+            "estado_detalle",
+            "iva",
+            "folio",
+            "id_tipo_moneda",
+            "id_empresa",
+            "id_operador",
+            "detalles",
+        ]
+        read_only_fields = ["id"]
+
+    def create(self, validated_data):
+        detalles_data = validated_data.pop("detalles")
+        cotizacion = Cotizacion.objects.create(**validated_data)
+        for det in detalles_data:
+            DetalleCotizacion.objects.create(
+                id_empresa=cotizacion.id_empresa,
+                id_cotizacion=cotizacion,
+                **det
+            )
+        return cotizacion
