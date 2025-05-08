@@ -77,6 +77,8 @@ from .views import (
     # He movido este endpoint para que responda en /logistica/tipos-solicitud/
     TipoSolicitudListAPIView,
     DetalleCotizacionByCotizacionAPIView,
+    # ---- NUEVO IMPORT PARA DELETE ---- #
+    CotizacionDeleteAPIView,
     CotizacionCreateAPIView,        # ← NUEVO ENDPOINT IMPORTADO
 )
 
@@ -170,6 +172,8 @@ urlpatterns = [
         CotizacionByIdAPIView.as_view(),
         name="cotizacion-por-id",
     ),
+     # ---- NUEVA RUTA PARA ELIMINAR COTIZACIÓN ---- #
+    path("logistica/cotizacion/eliminar/", CotizacionDeleteAPIView.as_view(), name="cotizacion-eliminar"),
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/", ComunaListAPIView.as_view(), name="comuna-listar"),
     path("comunas/por-region/", ComunaByRegionAPIView.as_view(), name="comuna-por-region"),

@@ -4168,3 +4168,75 @@ class CotizacionCreateAPIView(APIView):
             CotizacionCreateSerializer(cot).data,
             status=status.HTTP_201_CREATED
         )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → ELIMINAR COTIZACIÓN (DELETE)                        #
+# ------------------------------------------------------------------------- #
+class CotizacionDeleteAPIView(APIView):
+    """
+    DELETE /dm_sistema/logistica/cotizacion/eliminar/
+
+    Body JSON:
+    {
+        "id": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Sólo elimina la cotización cuyo `id`, `id_empresa` e `id_operador`
+      coinciden con la sesión.
+    • Elimina primero todos los detalles asociados (detalle_cotizacion)
+      cuya `id_cotizacion` y `id_empresa` coinciden, y luego la cabecera.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+    parser_classes = [JSONParser]
+
+    def delete(self, request, *args, **kwargs):
+        # 0) Validación de ID en el body
+        cot_id = request.data.get("id")
+        if cot_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 1) Verificación de token/cookie
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        operador = sesion_activa.id_operador
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Recuperar la cotización validando empresa y operador
+        try:
+            cotizacion = Cotizacion.objects.get(
+                pk=cot_id,
+                id_empresa=empresa.id,
+                id_operador=operador.id
+            )
+        except Cotizacion.DoesNotExist:
+            return Response({"detail": "Cotización no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Eliminar detalles asociados y luego la cotización en una transacción
+        with transaction.atomic():
+            DetalleCotizacion.objects.filter(
+                id_cotizacion=cotizacion,
+                id_empresa=empresa.id
+            ).delete()
+            cotizacion.delete()
+
+        # 4) Respuesta 204 No Content
+        return Response(status=status.HTTP_204_NO_CONTENT)
