@@ -273,3 +273,19 @@ class CotizacionByIdSerializer(serializers.Serializer):
     folio                    = serializers.CharField(allow_null=True)
     operador_nombre_completo = serializers.CharField()
     id_tipo_moneda           = serializers.IntegerField(allow_null=True)
+
+class DetalleCotizacionSerializer(serializers.Serializer):
+    id                  = serializers.IntegerField()
+    id_empresa          = serializers.IntegerField()
+    id_cotizacion       = serializers.IntegerField()
+    proveedor           = serializers.CharField()
+    fecha_registro      = serializers.DateTimeField()
+    cantidad            = serializers.CharField(allow_null=True)
+    detalles            = serializers.CharField(allow_null=True)
+    descuento_unitario  = serializers.FloatField(allow_null=True)
+    precio_unitario     = serializers.FloatField(allow_null=True)
+    id_modelo_producto  = serializers.IntegerField(allow_null=True)
+    tipo_descuento      = serializers.CharField(allow_null=True)
+    tipo_item           = serializers.IntegerField(allow_null=True)
+
+    

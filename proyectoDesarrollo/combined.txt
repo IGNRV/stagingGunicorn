@@ -1483,6 +1483,7 @@ from .serializer import (
     SolicitudCompraJoinSerializer,
     TipoSolicitudSerializer,
     CotizacionJoinSerializer,
+    CotizacionByIdSerializer
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 

@@ -70,7 +70,8 @@ from .serializer import (
     SolicitudCompraJoinSerializer,
     TipoSolicitudSerializer,
     CotizacionJoinSerializer,
-    CotizacionByIdSerializer
+    CotizacionByIdSerializer,
+    DetalleCotizacionSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -3984,4 +3985,99 @@ class CotizacionByIdAPIView(APIView):
 
         # 5) Serializar y devolver
         serializer = CotizacionByIdSerializer(data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → DETALLE COTIZACIONES POR COTIZACION (POST)           #
+# ------------------------------------------------------------------------- #
+class DetalleCotizacionByCotizacionAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/detalle-cotizacion/
+
+    Body JSON:
+    {
+        "id_cotizacion": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Filtra por empresa del operador y por id_cotizacion.
+    • Devuelve el JOIN entre detalle_cotizacion y proveedor.
+    """
+    authentication_classes = []
+    permission_classes     = []
+    parser_classes         = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 0) Validación body
+        cot_id = request.data.get("id_cotizacion")
+        if cot_id is None:
+            return Response(
+                {"id_cotizacion": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1) Token / sesión
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        sesion = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada está inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Ejecución de la consulta
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  dc.id,
+                  dc.id_empresa,
+                  dc.id_cotizacion,
+                  p.nombre_fantasia   AS proveedor,
+                  dc.fecha_registro,
+                  dc.cantidad,
+                  dc.detalles,
+                  dc.descuento_unitario,
+                  dc.precio_unitario,
+                  dc.id_modelo_producto,
+                  dc.tipo_descuento,
+                  dc.tipo_item
+                FROM dm_logistica.detalle_cotizacion AS dc
+                JOIN dm_logistica.proveedor       AS p
+                  ON dc.id_proveedor = p.id
+                WHERE dc.id_empresa    = %s
+                  AND dc.id_cotizacion = %s
+                ORDER BY dc.id
+            """, [empresa.id, cot_id])
+            rows = cursor.fetchall()
+
+        # 3) Mapeo a lista de dicts
+        data = [
+            {
+                "id":                  r[0],
+                "id_empresa":          r[1],
+                "id_cotizacion":       r[2],
+                "proveedor":           r[3],
+                "fecha_registro":      r[4],
+                "cantidad":            r[5],
+                "detalles":            r[6],
+                "descuento_unitario":  r[7],
+                "precio_unitario":     r[8],
+                "id_modelo_producto":  r[9],
+                "tipo_descuento":      r[10],
+                "tipo_item":           r[11],
+            }
+            for r in rows
+        ]
+
+        # 4) Serializar y devolver
+        serializer = DetalleCotizacionSerializer(data, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)

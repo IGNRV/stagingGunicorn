@@ -76,6 +76,7 @@ from .views import (
     # -------- LOGÍSTICA – TIPOS DE SOLICITUD -------- #
     # He movido este endpoint para que responda en /logistica/tipos-solicitud/
     TipoSolicitudListAPIView,
+    DetalleCotizacionByCotizacionAPIView,
 )
 
 urlpatterns = [
@@ -175,4 +176,10 @@ urlpatterns = [
 
     # -------- SISTEMA – TIPOS DE SOLICITUD (ajustado) -------- #
     path("logistica/tipos-solicitud/", TipoSolicitudListAPIView.as_view(), name="tipo-solicitud-listar"),
+    # ★ Nuevo endpoint: detalle de cotización por id_cotizacion
+    path(
+        "logistica/detalle-cotizacion/",
+        DetalleCotizacionByCotizacionAPIView.as_view(),
+        name="detalle-cotizacion-by-cotizacion"
+    ),
 ]
