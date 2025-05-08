@@ -63,7 +63,9 @@ from .views import (
     SolicitudCompraListAPIView,
     SolicitudCompraJoinListAPIView,
     SolicitudCompraCreateAPIView,
-    SolicitudCompraDetailAPIView,
+    SolicitudCompraJoinDetailAPIView,
+    # --------— NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD ——— #
+    CotizacionBySolicitudAPIView,   # ← IMPORT DEL NUEVO ENDPOINT
     # --------------------------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -151,8 +153,9 @@ urlpatterns = [
     path("logistica/solicitudes-compra/", SolicitudCompraListAPIView.as_view(), name="solicitud-compra-listar"),
     path("logistica/solicitudes-compra/joined/", SolicitudCompraJoinListAPIView.as_view(), name="solicitud-compra-join-listar"),
     path("logistica/solicitud-compra/crear/", SolicitudCompraCreateAPIView.as_view(), name="solicitud-compra-crear"),
-    path("logistica/solicitud-compra/detalle/", SolicitudCompraDetailAPIView.as_view(), name="solicitud-compra-detalle"),  # <--- AQUÍ
-
+    path("logistica/solicitud-compra/detalle/", SolicitudCompraJoinDetailAPIView.as_view(), name="solicitud-compra-join-detalle"),
+     # ---------- ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD ---------- #
+    path("logistica/cotizaciones-por-solicitud/", CotizacionBySolicitudAPIView.as_view(), name="cotizaciones-por-solicitud"),
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/", ComunaListAPIView.as_view(), name="comuna-listar"),
     path("comunas/por-region/", ComunaByRegionAPIView.as_view(), name="comuna-por-region"),

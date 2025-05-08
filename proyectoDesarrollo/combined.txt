@@ -408,7 +408,7 @@ class AtributoDetalle(models.Model):
 
 class Bodega(models.Model):
     id_empresa = models.IntegerField()
-    id_bodega_tipo = models.IntegerField()
+    id_bodega_tipo = models.ForeignKey('BodegaTipo', models.DO_NOTHING, db_column='id_bodega_tipo')
     estado_bodega = models.IntegerField()
     nombre_bodega = models.CharField(max_length=100)
     nombre_tipo_bodega = models.CharField(max_length=50, blank=True, null=True)
@@ -541,8 +541,6 @@ class DetalleCotizacion(models.Model):
 class EstadoControlInventario(models.Model):
     id_empresa = models.IntegerField(blank=True, null=True)
     id_estado_solicitud_compra = models.ForeignKey('EstadoSolicitudCompra', models.DO_NOTHING, db_column='id_estado_solicitud_compra', blank=True, null=True)
-    id_estado_compra = models.IntegerField(blank=True, null=True)
-    id_estado_control_inventario = models.IntegerField(blank=True, null=True)
     detalle = models.CharField(max_length=50, blank=True, null=True)
 
     class Meta:
@@ -587,7 +585,7 @@ class EstadoSolicitudCompra(models.Model):
 
 class Giro(models.Model):
     id_empresa = models.IntegerField()
-    id_proveedor = models.IntegerField()
+    id_proveedor = models.ForeignKey('Proveedor', models.DO_NOTHING, db_column='id_proveedor')
     descrip_giro = models.CharField(max_length=250)
     codigo_sii = models.CharField(max_length=10)
 
@@ -706,7 +704,7 @@ class OrdenCompra(models.Model):
     monto_total = models.FloatField(blank=True, null=True)
     observacion = models.TextField(blank=True, null=True)
     fecha_entrega = models.DateTimeField(blank=True, null=True)
-    id_aprobador = models.IntegerField()
+    id_aprobador = models.IntegerField(blank=True, null=True)
     archivo = models.CharField(max_length=256, blank=True, null=True)
     notas_adicionales = models.TextField(blank=True, null=True)
     id_requerimiento = models.IntegerField()
@@ -823,7 +821,7 @@ class ServiciosCajaChica(models.Model):
     monto = models.FloatField(blank=True, null=True)
     id_empresa = models.IntegerField()
     id_operador = models.IntegerField()
-    id_operador_autoriza = models.CharField(max_length=50)
+    id_operador_autoriza = models.IntegerField(blank=True, null=True)
     fecha_registro = models.DateTimeField()
     fecha_autoriza = models.DateField(blank=True, null=True)
     nota = models.TextField(blank=True, null=True)
@@ -860,7 +858,7 @@ class ServiciosCajaChicaDetalle(models.Model):
 class SolicitudCompra(models.Model):
     id_empresa = models.IntegerField()
     id_operador = models.IntegerField()
-    id_aprobador = models.IntegerField()
+    id_aprobador = models.IntegerField(blank=True, null=True)
     id_estado_solicitud_compra = models.ForeignKey(EstadoSolicitudCompra, models.DO_NOTHING, db_column='id_estado_solicitud_compra')
     fecha_registro = models.DateTimeField()
     descripcion = models.TextField()
@@ -885,7 +883,7 @@ class TipoControlInventario(models.Model):
 
     class Meta:
         managed = False
-        db_table = '"dm_logistica"."tipo_control_inventario"'
+        db_table = 'tipo_control_inventario'
 
 
 class TipoMarcaProducto(models.Model):
@@ -1256,6 +1254,7 @@ from .views import (
     SolicitudCompraListAPIView,
     SolicitudCompraJoinListAPIView,
     SolicitudCompraCreateAPIView,
+    SolicitudCompraJoinDetailAPIView,
     # --------------------------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -1343,7 +1342,7 @@ urlpatterns = [
     path("logistica/solicitudes-compra/", SolicitudCompraListAPIView.as_view(), name="solicitud-compra-listar"),
     path("logistica/solicitudes-compra/joined/", SolicitudCompraJoinListAPIView.as_view(), name="solicitud-compra-join-listar"),
     path("logistica/solicitud-compra/crear/", SolicitudCompraCreateAPIView.as_view(), name="solicitud-compra-crear"),
-
+    path("logistica/solicitud-compra/detalle/", SolicitudCompraJoinDetailAPIView.as_view(), name="solicitud-compra-join-detalle"),
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/", ComunaListAPIView.as_view(), name="comuna-listar"),
     path("comunas/por-region/", ComunaByRegionAPIView.as_view(), name="comuna-por-region"),
@@ -4897,9 +4896,22 @@ class SolicitudCompraCreateAPIView(APIView):
 
         # 2) Normalizamos y ajustamos data
         data = _normalize(request.data)
-        # Forzamos empresa correcta
+
+        # 2.1) Forzamos empresa correcta
         data.pop("id_empresa", None)
         data["id_empresa"] = empresa.id
+
+        # 2.2) Forzamos operador actual
+        data.pop("id_operador", None)
+        data["id_operador"] = sesion_activa.id_operador.id
+
+        # 2.3) Estado inicial de la solicitud: 1
+        data.pop("id_estado_solicitud_compra", None)
+        data["id_estado_solicitud_compra"] = 1
+
+        # 2.4) Aprobador inicial: null
+        data.pop("id_aprobador", None)
+        data["id_aprobador"] = None
 
         # 3) Subida y guardado del PDF
         pdf = request.FILES.get("pdf_file")
@@ -4971,7 +4983,129 @@ class TipoSolicitudListAPIView(APIView):
             TipoSolicitudSerializer(qs, many=True).data,
             status=status.HTTP_200_OK,
         )
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → DETALLE SOLICITUD COMPRA (POST)                    #
+# ------------------------------------------------------------------------- #
+class SolicitudCompraJoinDetailAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/solicitud-compra/detalle/
 
+    Body JSON:
+    {
+        "id": <int>   # id del registro en dm_logistica.solicitud_compra
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Devuelve la fila de solicitud de compra filtrada por id y id_empresa
+      (la empresa del operador del token), e incluye el PDF en base64
+      cargado desde la ruta en `ruta_file`.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 0) Validación de campo obligatorio
+        solicitud_id = request.data.get("id")
+        if solicitud_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 1) Verificación de token
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Ejecutamos la consulta JOIN con filtro por id_empresa y id
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  sc.id,
+                  sc.id_empresa,
+                  op.nombres AS operador,
+                  sc.id_aprobador,
+                  esc.descripcion_solicitud_compra AS estado_solicitud_compra,
+                  sc.fecha_registro,
+                  sc.descripcion,
+                  sc.fecha_solicitud_compra,
+                  ts.descripcion           AS tipo_solicitud,
+                  sc.titulo,
+                  sc.ruta_file,
+                  sc.cod_presupuesto,
+                  sc.id_punto_venta,
+                  sc.operador_rechazo,
+                  sc.fecha_rechazo,
+                  sc.motivo_rechazo,
+                  sc.id_requerimiento
+                FROM dm_logistica.solicitud_compra AS sc
+                JOIN dm_sistema.operador AS op
+                  ON sc.id_operador = op.id
+                JOIN dm_logistica.tipo_solicitud AS ts
+                  ON sc.id_tipo_solicitud = ts.id
+                JOIN dm_logistica.estado_solicitud_compra AS esc
+                  ON sc.id_estado_solicitud_compra = esc.id
+                WHERE sc.id_empresa = %s
+                  AND sc.id = %s
+                ORDER BY sc.id
+            """, [empresa.id, solicitud_id])
+            row = cursor.fetchone()
+
+        if not row:
+            return Response({"detail": "Solicitud de compra no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Mapeo de la fila a diccionario
+        data = {
+            "id":                         row[0],
+            "id_empresa":                 row[1],
+            "operador":                   row[2],
+            "id_aprobador":               row[3],
+            "estado_solicitud_compra":    row[4],
+            "fecha_registro":             row[5],
+            "descripcion":                row[6],
+            "fecha_solicitud_compra":     row[7],
+            "tipo_solicitud":             row[8],
+            "titulo":                     row[9],
+            "ruta_file":                  row[10],
+            "cod_presupuesto":            row[11],
+            "id_punto_venta":             row[12],
+            "operador_rechazo":           row[13],
+            "fecha_rechazo":              row[14],
+            "motivo_rechazo":             row[15],
+            "id_requerimiento":           row[16],
+        }
+
+        # 4) Cargamos el PDF y lo codificamos en base64
+        pdf_b64 = None
+        if data["ruta_file"]:
+            abs_path = os.path.join(
+                str(settings.BASE_DIR),
+                data["ruta_file"].lstrip("/")
+            )
+            try:
+                with open(abs_path, "rb") as f:
+                    pdf_b64 = base64.b64encode(f.read()).decode("utf-8")
+            except FileNotFoundError:
+                pdf_b64 = None
+
+        data["pdf_base64"] = pdf_b64
+
+        # 5) Respondemos directamente el JSON con la info y el PDF
+        return Response(data, status=status.HTTP_200_OK)
 
 === ./dm_sistema/models.py ===
 # This is an auto-generated Django model module.

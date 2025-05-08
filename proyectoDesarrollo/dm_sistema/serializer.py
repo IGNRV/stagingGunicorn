@@ -237,3 +237,23 @@ class SolicitudCompraJoinSerializer(serializers.Serializer):
     fecha_rechazo              = serializers.DateTimeField(allow_null=True)
     motivo_rechazo             = serializers.CharField(allow_null=True)
     id_requerimiento           = serializers.IntegerField(allow_null=True)
+
+
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → COTIZACIONES POR SOLICITUD (JOIN COMPLETO)        #
+# ------------------------------------------------------------------------- #
+class CotizacionJoinSerializer(serializers.Serializer):
+    id                   = serializers.IntegerField()
+    id_empresa           = serializers.IntegerField()
+    proveedor            = serializers.CharField()
+    id_solicitud_compra  = serializers.IntegerField()
+    fecha_cotizacion     = serializers.DateTimeField()
+    total                = serializers.FloatField()
+    validez_cotizacion   = serializers.IntegerField()
+    archivo              = serializers.CharField(allow_null=True)
+    estado_cotizacion    = serializers.IntegerField(allow_null=True)
+    estado_detalle       = serializers.IntegerField(allow_null=True)
+    iva                  = serializers.IntegerField(allow_null=True)
+    folio                = serializers.CharField(allow_null=True)
+    operador             = serializers.CharField()
+    id_tipo_moneda       = serializers.IntegerField(allow_null=True)

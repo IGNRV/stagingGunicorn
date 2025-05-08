@@ -69,6 +69,7 @@ from .serializer import (
     SolicitudCompraSerializer,
     SolicitudCompraJoinSerializer,
     TipoSolicitudSerializer,
+    CotizacionJoinSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -3616,9 +3617,9 @@ class TipoSolicitudListAPIView(APIView):
             status=status.HTTP_200_OK,
         )
 # ------------------------------------------------------------------------- #
-#  ★★★ NUEVO ENDPOINT → DETALLE SOLICITUD COMPRA (POST)                     #
+#  ★★★ NUEVO ENDPOINT → DETALLE SOLICITUD COMPRA (POST)                    #
 # ------------------------------------------------------------------------- #
-class SolicitudCompraDetailAPIView(APIView):
+class SolicitudCompraJoinDetailAPIView(APIView):
     """
     POST /dm_sistema/logistica/solicitud-compra/detalle/
 
@@ -3627,23 +3628,149 @@ class SolicitudCompraDetailAPIView(APIView):
         "id": <int>   # id del registro en dm_logistica.solicitud_compra
     }
 
-    • Requiere la cookie **auth_token**.
-    • Devuelve 404 si la solicitud no existe o pertenece a otra empresa.
+    • Requiere la cookie `auth_token`.
+    • Devuelve la fila de solicitud de compra filtrada por id y id_empresa
+      (la empresa del operador del token), e incluye el PDF en base64
+      cargado desde la ruta en `ruta_file`.
     """
     authentication_classes: list = []
     permission_classes:     list = []
     parser_classes = [JSONParser]
 
     def post(self, request, *args, **kwargs):
-        # ------------------ 0) Validación de body ----------------------- #
+        # 0) Validación de campo obligatorio
         solicitud_id = request.data.get("id")
         if solicitud_id is None:
+            return Response({"id": ["Este campo es obligatorio."]},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 1) Verificación de token
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Ejecutamos la consulta JOIN con filtro por id_empresa y id
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  sc.id,
+                  sc.id_empresa,
+                  op.nombres AS operador,
+                  sc.id_aprobador,
+                  esc.descripcion_solicitud_compra AS estado_solicitud_compra,
+                  sc.fecha_registro,
+                  sc.descripcion,
+                  sc.fecha_solicitud_compra,
+                  ts.descripcion           AS tipo_solicitud,
+                  sc.titulo,
+                  sc.ruta_file,
+                  sc.cod_presupuesto,
+                  sc.id_punto_venta,
+                  sc.operador_rechazo,
+                  sc.fecha_rechazo,
+                  sc.motivo_rechazo,
+                  sc.id_requerimiento
+                FROM dm_logistica.solicitud_compra AS sc
+                JOIN dm_sistema.operador AS op
+                  ON sc.id_operador = op.id
+                JOIN dm_logistica.tipo_solicitud AS ts
+                  ON sc.id_tipo_solicitud = ts.id
+                JOIN dm_logistica.estado_solicitud_compra AS esc
+                  ON sc.id_estado_solicitud_compra = esc.id
+                WHERE sc.id_empresa = %s
+                  AND sc.id = %s
+                ORDER BY sc.id
+            """, [empresa.id, solicitud_id])
+            row = cursor.fetchone()
+
+        if not row:
+            return Response({"detail": "Solicitud de compra no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Mapeo de la fila a diccionario
+        data = {
+            "id":                         row[0],
+            "id_empresa":                 row[1],
+            "operador":                   row[2],
+            "id_aprobador":               row[3],
+            "estado_solicitud_compra":    row[4],
+            "fecha_registro":             row[5],
+            "descripcion":                row[6],
+            "fecha_solicitud_compra":     row[7],
+            "tipo_solicitud":             row[8],
+            "titulo":                     row[9],
+            "ruta_file":                  row[10],
+            "cod_presupuesto":            row[11],
+            "id_punto_venta":             row[12],
+            "operador_rechazo":           row[13],
+            "fecha_rechazo":              row[14],
+            "motivo_rechazo":             row[15],
+            "id_requerimiento":           row[16],
+        }
+
+        # 4) Cargamos el PDF y lo codificamos en base64
+        pdf_b64 = None
+        if data["ruta_file"]:
+            abs_path = os.path.join(
+                str(settings.BASE_DIR),
+                data["ruta_file"].lstrip("/")
+            )
+            try:
+                with open(abs_path, "rb") as f:
+                    pdf_b64 = base64.b64encode(f.read()).decode("utf-8")
+            except FileNotFoundError:
+                pdf_b64 = None
+
+        data["pdf_base64"] = pdf_b64
+
+        # 5) Respondemos directamente el JSON con la info y el PDF
+        return Response(data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD (POST)                   #
+# ------------------------------------------------------------------------- #
+class CotizacionBySolicitudAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/cotizaciones-por-solicitud/
+
+    Body JSON:
+    {
+        "id_solicitud_compra": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Filtra por la empresa del operador autenticado y por
+      c.id_solicitud_compra = %s.
+    • Devuelve los campos del JOIN entre cotizacion, proveedor y operador.
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 0) Validación del body
+        id_solicitud = request.data.get("id_solicitud_compra")
+        if id_solicitud is None:
             return Response(
-                {"id": ["Este campo es obligatorio."]},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"id_solicitud_compra": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-        # ------------------ 1) Verificación de token -------------------- #
+        # 1) Verificación de token y empresa activa
         token_cookie = request.COOKIES.get("auth_token")
         if not token_cookie:
             return Response({"detail": "Token no proporcionado"},
@@ -3659,23 +3786,62 @@ class SolicitudCompraDetailAPIView(APIView):
             return Response({"detail": "Token inválido o sesión expirada"},
                             status=status.HTTP_401_UNAUTHORIZED)
 
-        # ------------------ 2) Empresa activa --------------------------- #
         empresa = sesion_activa.id_operador.id_empresa
         if not empresa or empresa.estado != 1:
-            return Response(
-                {"detail": "La empresa asociada se encuentra inactiva."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
 
-        # ------------------ 3) Recuperamos la solicitud ----------------- #
-        try:
-            solicitud = SolicitudCompra.objects.get(pk=solicitud_id, id_empresa=empresa.id)
-        except SolicitudCompra.DoesNotExist:
-            return Response({"detail": "Solicitud de compra no encontrada"},
-                            status=status.HTTP_404_NOT_FOUND)
+        # 2) Ejecución de la consulta SQL con JOINs y filtro
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  c.id,
+                  c.id_empresa,
+                  p.nombre_fantasia AS proveedor,
+                  c.id_solicitud_compra,
+                  c.fecha_cotizacion,
+                  c.total,
+                  c.validez_cotizacion,
+                  c.archivo,
+                  c.estado_cotizacion,
+                  c.estado_detalle,
+                  c.iva,
+                  c.folio,
+                  CONCAT(o.nombres, ' ', o.apellido_paterno, ' ', o.apellido_materno) AS operador,
+                  c.id_tipo_moneda
+                FROM dm_logistica.cotizacion AS c
+                JOIN dm_logistica.solicitud_compra AS sc
+                  ON c.id_solicitud_compra = sc.id
+                JOIN dm_logistica.proveedor AS p
+                  ON c.id_proveedor = p.id
+                JOIN dm_sistema.operador AS o
+                  ON c.id_operador = o.id
+                WHERE c.id_empresa = %s
+                  AND c.id_solicitud_compra = %s
+            """, [empresa.id, id_solicitud])
+            rows = cursor.fetchall()
 
-        # ------------------ 4) Serializamos y respondemos -------------- #
-        return Response(
-            SolicitudCompraSerializer(solicitud).data,
-            status=status.HTTP_200_OK
-        )
+        # 3) Mapeo de filas a lista de dicts
+        data = [
+            {
+                "id":                   row[0],
+                "id_empresa":           row[1],
+                "proveedor":            row[2],
+                "id_solicitud_compra":  row[3],
+                "fecha_cotizacion":     row[4],
+                "total":                row[5],
+                "validez_cotizacion":   row[6],
+                "archivo":              row[7],
+                "estado_cotizacion":    row[8],
+                "estado_detalle":       row[9],
+                "iva":                  row[10],
+                "folio":                row[11],
+                "operador":             row[12],
+                "id_tipo_moneda":       row[13],
+            }
+            for row in rows
+        ]
+
+        # 4) Serialización y respuesta
+        serializer = CotizacionJoinSerializer(data, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
