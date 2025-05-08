@@ -1182,6 +1182,41 @@ class SolicitudCompraJoinSerializer(serializers.Serializer):
     id_requerimiento           = serializers.IntegerField(allow_null=True)
 
 
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO SERIALIZER → COTIZACIONES POR SOLICITUD (JOIN COMPLETO)        #
+# ------------------------------------------------------------------------- #
+class CotizacionJoinSerializer(serializers.Serializer):
+    id                   = serializers.IntegerField()
+    id_empresa           = serializers.IntegerField()
+    proveedor            = serializers.CharField()
+    id_solicitud_compra  = serializers.IntegerField()
+    fecha_cotizacion     = serializers.DateTimeField()
+    total                = serializers.FloatField()
+    validez_cotizacion   = serializers.IntegerField()
+    archivo              = serializers.CharField(allow_null=True)
+    estado_cotizacion    = serializers.IntegerField(allow_null=True)
+    estado_detalle       = serializers.IntegerField(allow_null=True)
+    iva                  = serializers.IntegerField(allow_null=True)
+    folio                = serializers.CharField(allow_null=True)
+    operador             = serializers.CharField()
+    id_tipo_moneda       = serializers.IntegerField(allow_null=True)
+
+class CotizacionByIdSerializer(serializers.Serializer):
+    id                       = serializers.IntegerField()
+    id_empresa               = serializers.IntegerField()
+    id_proveedor             = serializers.IntegerField()
+    id_solicitud_compra      = serializers.IntegerField()
+    fecha_cotizacion         = serializers.DateTimeField()
+    total                    = serializers.FloatField()
+    validez_cotizacion       = serializers.IntegerField()
+    archivo                  = serializers.CharField(allow_null=True)
+    estado_cotizacion        = serializers.IntegerField(allow_null=True)
+    estado_detalle           = serializers.IntegerField(allow_null=True)
+    iva                      = serializers.IntegerField(allow_null=True)
+    folio                    = serializers.CharField(allow_null=True)
+    operador_nombre_completo = serializers.CharField()
+    id_tipo_moneda           = serializers.IntegerField(allow_null=True)
+
 === ./dm_sistema/admin.py ===
 from django.contrib import admin
 
@@ -1255,6 +1290,9 @@ from .views import (
     SolicitudCompraJoinListAPIView,
     SolicitudCompraCreateAPIView,
     SolicitudCompraJoinDetailAPIView,
+    # --------— NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD ——— #
+    CotizacionBySolicitudAPIView,   # ← IMPORT DEL NUEVO ENDPOINT
+    CotizacionByIdAPIView,
     # --------------------------- SISTEMA ----------- #
     ComunaListAPIView,
     ComunaByRegionAPIView,
@@ -1343,6 +1381,13 @@ urlpatterns = [
     path("logistica/solicitudes-compra/joined/", SolicitudCompraJoinListAPIView.as_view(), name="solicitud-compra-join-listar"),
     path("logistica/solicitud-compra/crear/", SolicitudCompraCreateAPIView.as_view(), name="solicitud-compra-crear"),
     path("logistica/solicitud-compra/detalle/", SolicitudCompraJoinDetailAPIView.as_view(), name="solicitud-compra-join-detalle"),
+     # ---------- ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD ---------- #
+    path("logistica/cotizaciones-por-solicitud/", CotizacionBySolicitudAPIView.as_view(), name="cotizaciones-por-solicitud"),
+    path(
+        "logistica/cotizacion-por-id/",
+        CotizacionByIdAPIView.as_view(),
+        name="cotizacion-por-id",
+    ),
     # --------------------------- SISTEMA – COMUNAS / REGIONES ----------- #
     path("comunas/", ComunaListAPIView.as_view(), name="comuna-listar"),
     path("comunas/por-region/", ComunaByRegionAPIView.as_view(), name="comuna-por-region"),
@@ -1437,6 +1482,7 @@ from .serializer import (
     SolicitudCompraSerializer,
     SolicitudCompraJoinSerializer,
     TipoSolicitudSerializer,
+    CotizacionJoinSerializer,
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -5106,6 +5152,251 @@ class SolicitudCompraJoinDetailAPIView(APIView):
 
         # 5) Respondemos directamente el JSON con la info y el PDF
         return Response(data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD (POST)                   #
+# ------------------------------------------------------------------------- #
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD (POST)                   #
+# ------------------------------------------------------------------------- #
+class CotizacionBySolicitudAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/cotizaciones-por-solicitud/
+
+    Body JSON:
+    {
+        "id_solicitud_compra": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Filtra por la empresa del operador autenticado y por
+      c.id_solicitud_compra = %s.
+    • Devuelve los campos del JOIN entre cotizacion, proveedor y operador,
+      **más** el PDF codificado en base64 en el campo `archivo_base64`.  
+    """
+    authentication_classes: list = []
+    permission_classes:     list = []
+
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 0) Validación del body
+        id_solicitud = request.data.get("id_solicitud_compra")
+        if id_solicitud is None:
+            return Response(
+                {"id_solicitud_compra": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1) Verificación de token y empresa activa
+        token_cookie = request.COOKIES.get("auth_token")
+        if not token_cookie:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion_activa = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token_cookie)
+            .first()
+        )
+        if not sesion_activa:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion_activa.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response({"detail": "La empresa asociada se encuentra inactiva."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # 2) Ejecución de la consulta SQL con JOINs y filtro
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  c.id,
+                  c.id_empresa,
+                  p.nombre_fantasia AS proveedor,
+                  c.id_solicitud_compra,
+                  c.fecha_cotizacion,
+                  c.total,
+                  c.validez_cotizacion,
+                  c.archivo,
+                  c.estado_cotizacion,
+                  c.estado_detalle,
+                  c.iva,
+                  c.folio,
+                  CONCAT(o.nombres, ' ', o.apellido_paterno, ' ', o.apellido_materno) AS operador,
+                  c.id_tipo_moneda
+                FROM dm_logistica.cotizacion AS c
+                JOIN dm_logistica.solicitud_compra AS sc
+                  ON c.id_solicitud_compra = sc.id
+                JOIN dm_logistica.proveedor AS p
+                  ON c.id_proveedor = p.id
+                JOIN dm_sistema.operador AS o
+                  ON c.id_operador = o.id
+                WHERE c.id_empresa = %s
+                  AND c.id_solicitud_compra = %s
+            """, [empresa.id, id_solicitud])
+            rows = cursor.fetchall()
+
+        # 3) Mapeo de filas a lista de dicts
+        data = [
+            {
+                "id":                   row[0],
+                "id_empresa":           row[1],
+                "proveedor":            row[2],
+                "id_solicitud_compra":  row[3],
+                "fecha_cotizacion":     row[4],
+                "total":                row[5],
+                "validez_cotizacion":   row[6],
+                "archivo":              row[7],
+                "estado_cotizacion":    row[8],
+                "estado_detalle":       row[9],
+                "iva":                  row[10],
+                "folio":                row[11],
+                "operador":             row[12],
+                "id_tipo_moneda":       row[13],
+            }
+            for row in rows
+        ]
+
+        # 4) Cargamos cada PDF usando default_storage y lo codificamos en Base64
+        for item in data:
+            ruta_relativa = item.get("archivo", "")
+            if ruta_relativa:
+                # default_storage espera rutas relativas a MEDIA_ROOT
+                file_path = ruta_relativa.lstrip("/")
+                try:
+                    with default_storage.open(file_path, "rb") as f:
+                        item["archivo_base64"] = base64.b64encode(f.read()).decode("utf-8")
+                except Exception:
+                    item["archivo_base64"] = None
+            else:
+                item["archivo_base64"] = None
+
+        # 5) Devolvemos el JSON completo (incluye archivo_base64)
+        return Response(data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → COTIZACIONES POR ID (POST)                           #
+# ------------------------------------------------------------------------- #
+class CotizacionByIdAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/cotizacion-por-id/
+
+    Body JSON:
+    {
+        "id": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Filtra por la empresa del operador autenticado (c.id_empresa)
+      y por c.id = %s.
+    • Devuelve los mismos campos de tu query original,
+      incluyendo `operador_nombre_completo`.
+    """
+    authentication_classes = []
+    permission_classes = []
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 0) Validación del body
+        cotizacion_id = request.data.get("id")
+        if cotizacion_id is None:
+            return Response(
+                {"id": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1) Verificación de token y empresa activa
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # 2) Ejecución de la consulta SQL
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  c.id,
+                  c.id_empresa,
+                  c.id_proveedor,
+                  c.id_solicitud_compra,
+                  c.fecha_cotizacion,
+                  c.total,
+                  c.validez_cotizacion,
+                  c.archivo,
+                  c.estado_cotizacion,
+                  c.estado_detalle,
+                  c.iva,
+                  c.folio,
+                  (
+                    o.nombres
+                    || ' '
+                    || o.apellido_paterno
+                    || COALESCE(' ' || NULLIF(o.apellido_materno, ''), '')
+                  ) AS operador_nombre_completo,
+                  c.id_tipo_moneda
+                FROM dm_logistica.cotizacion AS c
+                JOIN dm_sistema.operador AS o
+                  ON c.id_operador = o.id
+                WHERE c.id_empresa = %s
+                  AND c.id = %s
+            """, [empresa.id, cotizacion_id])
+            row = cursor.fetchone()
+
+        if not row:
+            return Response({"detail": "Cotización no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Mapeo a dict
+        data = {
+            "id":                       row[0],
+            "id_empresa":               row[1],
+            "id_proveedor":             row[2],
+            "id_solicitud_compra":      row[3],
+            "fecha_cotizacion":         row[4],
+            "total":                    row[5],
+            "validez_cotizacion":       row[6],
+            "archivo":                  row[7],
+            "estado_cotizacion":        row[8],
+            "estado_detalle":           row[9],
+            "iva":                      row[10],
+            "folio":                    row[11],
+            "operador_nombre_completo": row[12],
+            "id_tipo_moneda":           row[13],
+        }
+
+        # 4) Cargar el PDF y codificarlo en base64
+        archivo_rel = data["archivo"] or ""
+        if archivo_rel:
+            path = archivo_rel.lstrip("/")
+            try:
+                with default_storage.open(path, "rb") as f:
+                    data["archivo_base64"] = base64.b64encode(f.read()).decode("utf-8")
+            except Exception:
+                data["archivo_base64"] = None
+        else:
+            data["archivo_base64"] = None
+
+        # 5) Serializar y devolver
+        serializer = CotizacionByIdSerializer(data)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 === ./dm_sistema/models.py ===
 # This is an auto-generated Django model module.

@@ -70,6 +70,7 @@ from .serializer import (
     SolicitudCompraJoinSerializer,
     TipoSolicitudSerializer,
     CotizacionJoinSerializer,
+    CotizacionByIdSerializer
 )
 from dm_logistica.serializer import ModeloProductoSerializer  # ← import del serializer
 
@@ -3742,6 +3743,9 @@ class SolicitudCompraJoinDetailAPIView(APIView):
 # ------------------------------------------------------------------------- #
 #  ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD (POST)                   #
 # ------------------------------------------------------------------------- #
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → COTIZACIONES POR SOLICITUD (POST)                   #
+# ------------------------------------------------------------------------- #
 class CotizacionBySolicitudAPIView(APIView):
     """
     POST /dm_sistema/logistica/cotizaciones-por-solicitud/
@@ -3754,7 +3758,8 @@ class CotizacionBySolicitudAPIView(APIView):
     • Requiere la cookie `auth_token`.
     • Filtra por la empresa del operador autenticado y por
       c.id_solicitud_compra = %s.
-    • Devuelve los campos del JOIN entre cotizacion, proveedor y operador.
+    • Devuelve los campos del JOIN entre cotizacion, proveedor y operador,
+      **más** el PDF codificado en base64 en el campo `archivo_base64`.  
     """
     authentication_classes: list = []
     permission_classes:     list = []
@@ -3842,6 +3847,141 @@ class CotizacionBySolicitudAPIView(APIView):
             for row in rows
         ]
 
-        # 4) Serialización y respuesta
-        serializer = CotizacionJoinSerializer(data, many=True)
+        # 4) Cargamos cada PDF usando default_storage y lo codificamos en Base64
+        for item in data:
+            ruta_relativa = item.get("archivo", "")
+            if ruta_relativa:
+                # default_storage espera rutas relativas a MEDIA_ROOT
+                file_path = ruta_relativa.lstrip("/")
+                try:
+                    with default_storage.open(file_path, "rb") as f:
+                        item["archivo_base64"] = base64.b64encode(f.read()).decode("utf-8")
+                except Exception:
+                    item["archivo_base64"] = None
+            else:
+                item["archivo_base64"] = None
+
+        # 5) Devolvemos el JSON completo (incluye archivo_base64)
+        return Response(data, status=status.HTTP_200_OK)
+# ------------------------------------------------------------------------- #
+#  ★★★ NUEVO ENDPOINT → COTIZACIONES POR ID (POST)                           #
+# ------------------------------------------------------------------------- #
+class CotizacionByIdAPIView(APIView):
+    """
+    POST /dm_sistema/logistica/cotizacion-por-id/
+
+    Body JSON:
+    {
+        "id": <int>
+    }
+
+    • Requiere la cookie `auth_token`.
+    • Filtra por la empresa del operador autenticado (c.id_empresa)
+      y por c.id = %s.
+    • Devuelve los mismos campos de tu query original,
+      incluyendo `operador_nombre_completo`.
+    """
+    authentication_classes = []
+    permission_classes = []
+    parser_classes = [JSONParser]
+
+    def post(self, request, *args, **kwargs):
+        # 0) Validación del body
+        cotizacion_id = request.data.get("id")
+        if cotizacion_id is None:
+            return Response(
+                {"id": ["Este campo es obligatorio."]},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 1) Verificación de token y empresa activa
+        token = request.COOKIES.get("auth_token")
+        if not token:
+            return Response({"detail": "Token no proporcionado"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        sesion = (
+            SesionesActivas.objects
+            .select_related("id_operador", "id_operador__id_empresa")
+            .filter(token=token)
+            .first()
+        )
+        if not sesion:
+            return Response({"detail": "Token inválido o sesión expirada"},
+                            status=status.HTTP_401_UNAUTHORIZED)
+
+        empresa = sesion.id_operador.id_empresa
+        if not empresa or empresa.estado != 1:
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # 2) Ejecución de la consulta SQL
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT
+                  c.id,
+                  c.id_empresa,
+                  c.id_proveedor,
+                  c.id_solicitud_compra,
+                  c.fecha_cotizacion,
+                  c.total,
+                  c.validez_cotizacion,
+                  c.archivo,
+                  c.estado_cotizacion,
+                  c.estado_detalle,
+                  c.iva,
+                  c.folio,
+                  (
+                    o.nombres
+                    || ' '
+                    || o.apellido_paterno
+                    || COALESCE(' ' || NULLIF(o.apellido_materno, ''), '')
+                  ) AS operador_nombre_completo,
+                  c.id_tipo_moneda
+                FROM dm_logistica.cotizacion AS c
+                JOIN dm_sistema.operador AS o
+                  ON c.id_operador = o.id
+                WHERE c.id_empresa = %s
+                  AND c.id = %s
+            """, [empresa.id, cotizacion_id])
+            row = cursor.fetchone()
+
+        if not row:
+            return Response({"detail": "Cotización no encontrada"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # 3) Mapeo a dict
+        data = {
+            "id":                       row[0],
+            "id_empresa":               row[1],
+            "id_proveedor":             row[2],
+            "id_solicitud_compra":      row[3],
+            "fecha_cotizacion":         row[4],
+            "total":                    row[5],
+            "validez_cotizacion":       row[6],
+            "archivo":                  row[7],
+            "estado_cotizacion":        row[8],
+            "estado_detalle":           row[9],
+            "iva":                      row[10],
+            "folio":                    row[11],
+            "operador_nombre_completo": row[12],
+            "id_tipo_moneda":           row[13],
+        }
+
+        # 4) Cargar el PDF y codificarlo en base64
+        archivo_rel = data["archivo"] or ""
+        if archivo_rel:
+            path = archivo_rel.lstrip("/")
+            try:
+                with default_storage.open(path, "rb") as f:
+                    data["archivo_base64"] = base64.b64encode(f.read()).decode("utf-8")
+            except Exception:
+                data["archivo_base64"] = None
+        else:
+            data["archivo_base64"] = None
+
+        # 5) Serializar y devolver
+        serializer = CotizacionByIdSerializer(data)
         return Response(serializer.data, status=status.HTTP_200_OK)
