@@ -4091,50 +4091,37 @@ class CotizacionCreateAPIView(APIView):
     """
     POST /dm_sistema/logistica/cotizacion/crear/
 
-    Body JSON de ejemplo:
-    {
-        "id_proveedor": <int>,
-        "id_solicitud_compra": <int>,
-        "fecha_cotizacion": "YYYY-MM-DD HH:MM:SS",
-        "total": <float>,
-        "validez_cotizacion": <int>,
-        "archivo": "<ruta_opcional>",
-        "estado_cotizacion": <int>,
-        "estado_detalle": <int>,
-        "iva": <int>,
-        "folio": "<str>",
-        "id_tipo_moneda": <int>,
-        "detalles": [
-            {
-                "id_proveedor": <int>,
-                "fecha_registro": "YYYY-MM-DD HH:MM:SS",
-                "cantidad": "<str>",
-                "detalles": "<str>",
-                "descuento_unitario": <float>,
-                "precio_unitario": <float>,
-                "id_modelo_producto": <int>,
-                "tipo_descuento": "<str>",
-                "tipo_item": <int>
-            },
-            …
-        ]
-    }
+    • Acepta JSON puro **o** multipart/form-data.
+    • Si llega un archivo en la clave **pdf_file** se guarda automáticamente
+      bajo MEDIA_ROOT/files/cotizaciones/<uuid>.pdf y la ruta pública
+      (por ejemplo “/media/files/cotizaciones/287e5f53….pdf”) se almacena en
+      la columna `archivo`.
 
-    • Forzamos siempre id_empresa de la cotización y de cada detalle
-      al de la empresa asociada al token de sesión.
-    • Igualmente, forzamos id_operador de la cotización al operador en sesión.
-    • Inserta la cotización y todos sus detalles en una sola transacción.
-    • Devuelve 201 + el JSON de la cotización (con sus detalles) si todo OK.
+    Body (ejemplo mínimo en FormData):
+        ├── id_proveedor=1
+        ├── id_solicitud_compra=10
+        ├── fecha_cotizacion=2025-05-09 12:00:00
+        ├── total=10000
+        ├── pdf_file=<…pdf…>          ← opcional
+        └── detalles=[{…}, {…}, …]    ← ver especificación anterior
     """
     authentication_classes: list = []
     permission_classes:     list = []
-    parser_classes         = [JSONParser]
+
+    # ← NUEVO: admitimos multipart/form-data
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request, *args, **kwargs):
-        # 1) Verificación de token y sesión
+        # ---------------------------------------------------------------- #
+        # 1) Validación de token y obtención de empresa / operador          #
+        # ---------------------------------------------------------------- #
         token = request.COOKIES.get("auth_token")
         if not token:
-            return Response({"detail": "Token no proporcionado"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Token no proporcionado"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
         sesion = (
             SesionesActivas.objects
             .select_related("id_operador", "id_operador__id_empresa")
@@ -4142,31 +4129,58 @@ class CotizacionCreateAPIView(APIView):
             .first()
         )
         if not sesion:
-            return Response({"detail": "Token inválido o sesión expirada"}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response(
+                {"detail": "Token inválido o sesión expirada"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
         empresa = sesion.id_operador.id_empresa
         if not empresa or empresa.estado != 1:
-            return Response({"detail": "La empresa asociada se encuentra inactiva."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"detail": "La empresa asociada se encuentra inactiva."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-        # 2) Preparamos payload y forzamos id_empresa e id_operador correctos
+        # ---------------------------------------------------------------- #
+        # 2) Preparamos los datos                                         #
+        # ---------------------------------------------------------------- #
+        # • `request.data` puede ser QueryDict (FormData) — usamos copy()
         data = request.data.copy()
-        data.pop("id_empresa", None)
-        data["id_empresa"] = empresa.id
-        data.pop("id_operador", None)
+
+        # Forzamos id_empresa / id_operador correctos
+        data["id_empresa"]  = empresa.id
         data["id_operador"] = sesion.id_operador.id
 
-        # 3) Serializamos & validamos
+        # ---------------------------------------------------------------- #
+        # 3) Gestión del PDF (opcional)                                   #
+        # ---------------------------------------------------------------- #
+        pdf = request.FILES.get("pdf_file")
+        if pdf:
+            # Guarda en /files/cotizaciones/<uuid>.pdf
+            data["archivo"] = _save_uploaded_file(pdf, subdir="cotizaciones")
+
+        # ---------------------------------------------------------------- #
+        # 4) Serialización + validación                                   #
+        # ---------------------------------------------------------------- #
         serializer = CotizacionCreateSerializer(data=data)
         if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # 4) Guardamos todo dentro de una transacción
+        # ---------------------------------------------------------------- #
+        # 5) Inserción en una única transacción                           #
+        # ---------------------------------------------------------------- #
         with transaction.atomic():
-            cot = serializer.save()
+            cotizacion = serializer.save()
 
-        # 5) Devolvemos 201 y el payload creado (incluye detalles)
+        # ---------------------------------------------------------------- #
+        # 6) Respuesta                                                    #
+        # ---------------------------------------------------------------- #
         return Response(
-            CotizacionCreateSerializer(cot).data,
-            status=status.HTTP_201_CREATED
+            CotizacionCreateSerializer(cotizacion).data,
+            status=status.HTTP_201_CREATED,
         )
 # ------------------------------------------------------------------------- #
 #  ★★★ NUEVO ENDPOINT → ELIMINAR COTIZACIÓN (DELETE)                        #

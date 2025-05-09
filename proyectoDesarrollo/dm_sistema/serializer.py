@@ -319,11 +319,20 @@ class DetalleCotizacionCreateSerializer(serializers.ModelSerializer):
 class CotizacionCreateSerializer(serializers.ModelSerializer):
     """
     Serializer para crear una cotización junto con uno o varios detalles.
-    Ahora incluye id_empresa e id_operador para evitar errores de NOT NULL,
-    y marca los campos necesarios como sólo escritura.
+
+    • Incluye id_empresa e id_operador para evitar errores de NOT NULL.
+    • Ahora admite la subida de un PDF mediante un campo **pdf_file** que
+      llegará en multipart/form-data; el campo real en la BD sigue siendo
+      `archivo`, que es solo de lectura aquí.
     """
-    id_empresa = serializers.IntegerField(write_only=True)
+    id_empresa  = serializers.IntegerField(write_only=True)
     id_operador = serializers.IntegerField(write_only=True)
+
+    # ← NUEVO: campo virtual SOLO para escritura
+    pdf_file = serializers.FileField(
+        write_only=True, required=False, allow_null=True
+    )
+
     detalles = DetalleCotizacionCreateSerializer(many=True, write_only=True)
 
     class Meta:
@@ -335,7 +344,7 @@ class CotizacionCreateSerializer(serializers.ModelSerializer):
             "fecha_cotizacion",
             "total",
             "validez_cotizacion",
-            "archivo",
+            "archivo",              # ← solo lectura, lo rellena la view
             "estado_cotizacion",
             "estado_detalle",
             "iva",
@@ -343,17 +352,21 @@ class CotizacionCreateSerializer(serializers.ModelSerializer):
             "id_tipo_moneda",
             "id_empresa",
             "id_operador",
+            "pdf_file",             # ← NUEVO
             "detalles",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = ["id", "archivo"]
 
+    # No procesamos el PDF aquí; lo hará la view.
     def create(self, validated_data):
         detalles_data = validated_data.pop("detalles")
+        validated_data.pop("pdf_file", None)        # lo maneja la view
+
         cotizacion = Cotizacion.objects.create(**validated_data)
         for det in detalles_data:
             DetalleCotizacion.objects.create(
-                id_empresa=cotizacion.id_empresa,
-                id_cotizacion=cotizacion,
+                id_empresa   = cotizacion.id_empresa,
+                id_cotizacion= cotizacion,
                 **det
             )
         return cotizacion
