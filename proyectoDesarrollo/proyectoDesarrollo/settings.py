@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'dm_logistica',
     'dm_sistema',
     'dm_requerimientos',
+    'dm_catalogo',
 ]
 
 MIDDLEWARE = [
