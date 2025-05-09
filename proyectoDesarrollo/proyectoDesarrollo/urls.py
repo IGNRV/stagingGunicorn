@@ -8,6 +8,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     # ▸ Rutas de la nueva lógica bajo dm_sistema
     path('dm_sistema/', include('dm_sistema.urls')),
+
+    # Nuevo: endpoints de dm_catalogo
+    path("dm_catalogo/", include("dm_catalogo.urls"))
 ]
 
 # ---------------------------   NUEVO / EDITADO   ---------------------------- #
